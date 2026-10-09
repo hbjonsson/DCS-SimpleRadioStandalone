@@ -35,7 +35,7 @@
     <ItemGroup>
         <PackageReference Include="Caliburn.Micro.Core" Version="5.0.258" />
         <PackageReference Include="Concentus.Oggfile" Version="1.0.7" />
-        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.300">
+        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401">
           <PrivateAssets>all</PrivateAssets>
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
@@ -45,6 +45,13 @@
         <PackageReference Include="OggVorbisEncoder" Version="1.2.2" />
         <PackageReference Include="sharpconfig" Version="4.1.0" />
         <PackageReference Include="SharpOpenNat" Version="4.0.17" />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- BASS-free OpenFreq receiver DSP. Prefer libs/OpenFreqAudio submodule when present. -->
+        <ProjectReference Include="..\libs\OpenFreqAudio\OpenFreqAudio.Dsp\OpenFreqAudio.Dsp.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <InternalsVisibleTo Include="DCS-SR-CommonTests" />
     </ItemGroup>
     <ItemGroup>
         <Compile Update="Properties\Resources.Designer.cs">

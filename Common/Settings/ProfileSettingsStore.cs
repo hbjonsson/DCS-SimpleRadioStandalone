@@ -72,7 +72,13 @@ public enum ProfileSettingsKeys
     DisableExpansionRadios,
     ServerPresetSelection,
     AllowServerEAMRadioPreset, //sets if the awacs custom radio config can be used
-    InstructorMode // allows tuning to Intercoms, only for receiving - cant send
+    InstructorMode, // allows tuning to Intercoms, only for receiving - cant send
+
+    /// <summary>
+    /// Local receive effects engine: "SRS" (default) or "OpenFreq".
+    /// Affects playback only — wire protocol unchanged.
+    /// </summary>
+    ReceiverEffectsEngine
 }
 
 public enum ServerPresetConfiguration
@@ -80,6 +86,13 @@ public enum ServerPresetConfiguration
     USE_SERVER_ONLY_IF_SET,
     USE_CLIENT_ONLY,
     USE_CLIENT_AND_SERVER_IF_SET
+}
+
+/// <summary>Client-local AM receive effects engine selection.</summary>
+public enum ReceiverEffectsEngine
+{
+    SRS,
+    OpenFreq
 }
 
 public class ProfileSettingsStore
@@ -163,6 +176,7 @@ public class ProfileSettingsStore
         { ProfileSettingsKeys.Radio9Channel.ToString(), "0" },
         { ProfileSettingsKeys.Radio10Channel.ToString(), "0" },
         { ProfileSettingsKeys.IntercomChannel.ToString(), "0" },
+        { ProfileSettingsKeys.ReceiverEffectsEngine.ToString(), nameof(ReceiverEffectsEngine.OpenFreq) },
     };
 
     public static readonly List<string> ServerPresetSettings;

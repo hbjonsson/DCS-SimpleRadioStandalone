@@ -22,6 +22,9 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models
         public double ReceivingPower { get; }
         public bool NoAudioEffects { get; }
 
+        /// <summary>Transmit frequency in Hz (local DSP context; not a network field).</summary>
+        public double Frequency { get; }
+
         public TransmissionSegment(DeJitteredTransmission transmission)
         {
             Audio = new float[transmission.PCMAudioLength];
@@ -36,6 +39,7 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models
             ClientGuid = transmission.Guid;
             ReceivingPower = transmission.ReceivingPower;
             NoAudioEffects = transmission.NoAudioEffects;
+            Frequency = transmission.Frequency;
         }
     }
 }

@@ -24,6 +24,7 @@ public class RadioMixingProvider : ISampleProvider
 
 
     private readonly ClientEffectsPipeline pipeline = new();
+    private readonly OpenFreqReceiverEffectsPipeline openFreqPipeline;
 
     private readonly ProfileSettingsStore profileSettings =
         GlobalSettingsStore.Instance.ProfileSettingsStore;
@@ -36,6 +37,8 @@ public class RadioMixingProvider : ISampleProvider
 
     private float[] mixBuffer;
     private int availableInBuffer = 0;
+    private long _lastEngineRefresh;
+    private ReceiverEffectsEngine _receiverEffectsEngine = ReceiverEffectsEngine.SRS;
 
     //  private readonly WaveFileWriter waveWriter;
     public RadioMixingProvider(WaveFormat waveFormat, int radioId)
@@ -46,6 +49,7 @@ public class RadioMixingProvider : ISampleProvider
         this.radioId = radioId;
         sources = new List<ClientAudioProvider>();
         WaveFormat = waveFormat;
+        openFreqPipeline = new OpenFreqReceiverEffectsPipeline(radioId, waveFormat.SampleRate);
 
         //5 seconds worth of buffer
         effectsBuffer = new CircularFloatBuffer(WaveFormat.SampleRate * 5);
@@ -157,9 +161,17 @@ public class RadioMixingProvider : ISampleProvider
                     var targetSpan = mixBuffer.AsSpan(availableInBuffer, longestSegmentLength);
                     targetSpan.Clear();
 
-
-                    // #TODO: pass receiving radio model name.
-                    pipeline.ProcessSegments(targetSpan, segments, null);
+                    RefreshReceiverEngine();
+                    if (_receiverEffectsEngine == ReceiverEffectsEngine.OpenFreq
+                        && OpenFreqReceiverEffectsPipeline.CanProcess(segments))
+                    {
+                        openFreqPipeline.ProcessSegments(targetSpan, segments);
+                    }
+                    else
+                    {
+                        // #TODO: pass receiving radio model name.
+                        pipeline.ProcessSegments(targetSpan, segments, null);
+                    }
 
                     //now clip all mixing
                     AudioManipulationHelper.ClipArray(targetSpan);
@@ -226,6 +238,22 @@ public class RadioMixingProvider : ISampleProvider
         {
             sources.Clear();
         }
+    }
+
+    private void RefreshReceiverEngine()
+    {
+        var now = DateTime.Now.Ticks;
+        if (TimeSpan.FromTicks(now - _lastEngineRefresh).TotalSeconds <= 3)
+            return;
+
+        _lastEngineRefresh = now;
+        var previous = _receiverEffectsEngine;
+        var raw = profileSettings.GetClientSettingString(ProfileSettingsKeys.ReceiverEffectsEngine);
+        if (!Enum.TryParse(raw, true, out _receiverEffectsEngine))
+            _receiverEffectsEngine = ReceiverEffectsEngine.SRS;
+
+        if (previous != _receiverEffectsEngine)
+            openFreqPipeline.Reset();
     }
 
     private int HandleStartEndTones(bool isActive, bool encryption, float[] buffer, int offset, int count)

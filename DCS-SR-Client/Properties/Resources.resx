@@ -1243,6 +1243,9 @@ Requires Tx or Rx Effects On</value>
   <data name="PerRadioModelEffects" xml:space="preserve">
     <value>Enable Per Radio Model Effects</value>
   </data>
+  <data name="OpenFreqReceiveEffects" xml:space="preserve">
+    <value>Use OpenFreq Receive Effects (AM, local only)</value>
+  </data>
   <data name="SrvEAMRadioPresetEnabled" xml:space="preserve">
     <value>Server EAM Radio Preset Enabled</value>
   </data>

@@ -33,6 +33,9 @@ public partial class App : Application
 
     public App()
     {
+        Directory.CreateDirectory(ForkBranding.SettingsDirectory);
+        GlobalSettingsStore.Path = ForkBranding.SettingsDirectory + Path.DirectorySeparatorChar;
+
 #if false
         // Useful to track down threading issues.
         if (!ThreadPool.SetMinThreads(1, 1))
@@ -61,7 +64,7 @@ public partial class App : Application
         catch { /* ignored */ }
 
 
-        SentrySdk.Init("https://1b22a96cbcc34ee4b9db85c7fa3fe4e3@o414743.ingest.sentry.io/5304752");
+        // This is a separately branded fork; do not submit fork exceptions to upstream SRS telemetry.
         AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionHandler;
 
         var location = AppDomain.CurrentDomain.BaseDirectory;
@@ -166,7 +169,7 @@ public partial class App : Application
                 {
                     UseShellExecute = true,
                     WorkingDirectory = "\"" + location + "\"",
-                    FileName = "SR-ClientRadio.exe",
+                    FileName = ForkBranding.ExecutableName,
                     Verb = "runas",
                     Arguments = GetArgsString() + " -allowMultiple"
                 };
@@ -227,7 +230,7 @@ public partial class App : Application
                 builder.Append(str);
                 builder.Append("\"");
             }
-            else if (s.Contains("SR-ClientRadio.exe"))
+            else if (s.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             {
                 ///ignore
             }
@@ -243,7 +246,7 @@ public partial class App : Application
     private bool IsClientRunning()
     {
         bool created;
-        SingleInstanceMutex = new Mutex(true, "DCS-SimpleRadioStandalone", out created);
+        SingleInstanceMutex = new Mutex(true, ForkBranding.SingleInstanceMutex, out created);
         return !created;
     }
 
@@ -304,6 +307,7 @@ public partial class App : Application
         _notifyIcon = new NotifyIcon
         {
             Icon = Client.Properties.Resources.audio_headset,
+            Text = ForkBranding.ProductName,
             Visible = true
         };
 

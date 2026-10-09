@@ -1138,10 +1138,15 @@
                                VerticalContentAlignment="Center"
                                Content="{x:Static p:Resources.PerRadioModelEffects}" />
 
-                            <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="9"
-                                Grid.Column="1"
-                                ToggleValue="{Binding PerRadioModelEffects, Mode=TwoWay}" />   
+                            <StackPanel Grid.Row="9" Grid.Column="1">
+                                <clientSettingsControl:SettingsToggleControl
+                                    ToggleValue="{Binding PerRadioModelEffects, Mode=TwoWay}" />
+                                <Label HorizontalContentAlignment="Center"
+                                       Content="{x:Static p:Resources.OpenFreqReceiveEffects}"
+                                       Margin="0,8,0,0" />
+                                <clientSettingsControl:SettingsToggleControl
+                                    ToggleValue="{Binding OpenFreqReceiveEffects, Mode=TwoWay}" />
+                            </StackPanel>
 
 
                             <Label Grid.Row="10"

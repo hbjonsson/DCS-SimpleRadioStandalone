@@ -1307,4 +1307,7 @@ https://github.com/ciribob/DCS-SimpleRadioStandalone/releases/latest</value>
   <data name="ClientWindowTitile" xml:space="preserve">
     <value>已连接的客户端</value>
   </data>
+  <data name="OpenFreqReceiveEffects" xml:space="preserve">
+    <value>使用 OpenFreq 接收音效（AM，仅本地）</value>
+  </data>
 </root>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>OpenFreqAudio</RootNamespace>
+    <AssemblyName>OpenFreqAudio.Dsp</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Description>BASS-free OpenFreq receiver DSP (AM envelope, AGC, squelch, noise, band-pass).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NWaves" Version="0.9.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenFreqAudio.Tests" />
+  </ItemGroup>
+
+</Project>

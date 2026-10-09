@@ -37,7 +37,7 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         SetSRSPathCommand = new DelegateCommand(() =>
         {
             DirectoryInfo di = new DirectoryInfo(Directory.GetCurrentDirectory());
-            Registry.SetValue("HKEY_CURRENT_USER\\SOFTWARE\\DCS-SR-Standalone", "SRPathStandalone",
+            Registry.SetValue(ForkBranding.RegistryKey, "SRPathStandalone",
                 di.Parent);
 
             MessageBox.Show(Application.Current.MainWindow,
@@ -925,6 +925,28 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         set
         {
             _globalSettings.ProfileSettingsStore.SetClientSettingBool(ProfileSettingsKeys.PerRadioModelEffects, value);
+            NotifyPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// When true, AM receive audio uses OpenFreq's local receiver DSP.
+    /// Default false preserves stock SRS effects. Wire protocol is unchanged.
+    /// </summary>
+    public bool OpenFreqReceiveEffects
+    {
+        get
+        {
+            var raw = _globalSettings.ProfileSettingsStore.GetClientSettingString(
+                ProfileSettingsKeys.ReceiverEffectsEngine);
+            return Enum.TryParse(raw, true, out ReceiverEffectsEngine engine)
+                   && engine == ReceiverEffectsEngine.OpenFreq;
+        }
+        set
+        {
+            _globalSettings.ProfileSettingsStore.SetClientSettingString(
+                ProfileSettingsKeys.ReceiverEffectsEngine,
+                value ? nameof(ReceiverEffectsEngine.OpenFreq) : nameof(ReceiverEffectsEngine.SRS));
             NotifyPropertyChanged();
         }
     }

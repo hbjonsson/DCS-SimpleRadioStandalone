@@ -267,3 +267,7 @@ install-build/
 sign.bat
 
 .leu
+
+# Vendor only the BASS-free receiver DSP from a local OpenFreqAudio checkout.
+/libs/OpenFreqAudio/*
+!/libs/OpenFreqAudio/OpenFreqAudio.Dsp/

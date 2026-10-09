@@ -2229,6 +2229,15 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Client.Properties {
                 return ResourceManager.GetString("PerRadioModelEffects", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Use OpenFreq Receive Effects (AM, local only).
+        /// </summary>
+        public static string OpenFreqReceiveEffects {
+            get {
+                return ResourceManager.GetString("OpenFreqReceiveEffects", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Looks up a localized string similar to Play connection sounds.
