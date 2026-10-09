@@ -270,4 +270,5 @@ sign.bat
 
 # Vendor only the BASS-free receiver DSP from a local OpenFreqAudio checkout.
 /libs/OpenFreqAudio/*
+!/libs/OpenFreqAudio/LICENSE.md
 !/libs/OpenFreqAudio/OpenFreqAudio.Dsp/

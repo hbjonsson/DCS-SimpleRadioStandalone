@@ -77,7 +77,7 @@ public partial class App : Application
             {
                 TaskDialog.ShowDialog(new TaskDialogPage
                 {
-                    Caption = $"Installation Error!",
+                    Caption = ForkBranding.ProductName,
                     Heading = $"You are missing the {dll}",
                     Text = $"Reinstall using the Installer and don't move the client from the installation directory!",
                     Icon = TaskDialogIcon.Error,
@@ -119,7 +119,7 @@ public partial class App : Application
 
                     TaskDialog.ShowDialog(new TaskDialogPage
                     {
-                        Caption = "Multiple SimpleRadio clients started!",
+                        Caption = ForkBranding.ProductName,
                         Heading = "Another instance of the SimpleRadio client is already running!",
                         Text = $"This one will now quit. Check your system tray for the SRS Icon",
                         Icon = TaskDialogIcon.Error,
@@ -204,7 +204,7 @@ public partial class App : Application
                 {
                     await TaskDialog.ShowDialogAsync(new TaskDialogPage
                     {
-                        Caption = "UAC Error",
+                        Caption = ForkBranding.ProductName,
                         Heading = "SRS could not restart with elevated privileges.",
                         Text = $"Unless you have a very specific need you should disable the Require Admin option in the settings.",
                         Icon = TaskDialogIcon.Warning,

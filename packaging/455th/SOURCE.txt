@@ -1,0 +1,28 @@
+455th vAEW SRS - Source and license notice
+============================================
+
+This distribution is a modified version of DCS SimpleRadio Standalone.
+The 455th modifications were made in October 2026.
+
+Complete corresponding source code and build scripts are available at no
+charge from:
+
+  https://github.com/hbjonsson/DCS-SimpleRadioStandalone
+
+The original SRS project is available from:
+
+  https://github.com/ciribob/DCS-SimpleRadioStandalone
+
+The SRS-derived portions of this modified distribution are licensed under
+the GNU General Public License version 3. See LICENSE.txt.
+
+The OpenFreqAudio receiver DSP files under libs/OpenFreqAudio remain
+available under the Mozilla Public License version 2.0. Their source is
+included in the repository above. See OPENFREQAUDIO-LICENSE.txt.
+
+OpenFreqAudio upstream:
+
+  https://github.com/UOAF/OpenFreqAudio
+
+NWaves 0.9.6 is distributed under the MIT License. See
+NWAVES-LICENSE.txt.

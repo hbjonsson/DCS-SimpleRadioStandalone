@@ -1,0 +1,4 @@
+<WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="en-US">
+  <String Id="WelcomeDlgTitle" Value="{\WixUI_Font_Bigger}Welcome to the 455th vAEW SRS Setup Wizard" />
+  <String Id="WelcomeDlgDescription" Value="This is free software. SRS-derived code is provided under GPLv3, OpenFreqAudio components remain under MPLv2, and NWaves is MIT licensed. No license acceptance is required to install or run this software. Full license and corresponding-source notices are installed with the application. Click Next to continue." />
+</WixLocalization>

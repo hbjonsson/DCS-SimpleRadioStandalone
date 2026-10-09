@@ -9,7 +9,7 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Client;
 /// </summary>
 public static class ForkBranding
 {
-    public const string ProductName = "455th SRS";
+    public const string ProductName = "455th vAEW SRS";
     public const string ExecutableName = "455th-SR-ClientRadio.exe";
     public const string SingleInstanceMutex = "455th-DCS-SimpleRadioStandalone";
     public const string RegistryKey = @"HKEY_CURRENT_USER\SOFTWARE\455th-DCS-SR-Standalone";

@@ -24,9 +24,9 @@
         <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <Company>Ciribob - GitHub.com/Ciribob</Company>
-        <Product>455th SRS</Product>
-        <AssemblyTitle>455th SRS Client</AssemblyTitle>
-        <Description>455th SRS client with OpenFreq receiver DSP</Description>
+        <Product>455th vAEW SRS</Product>
+        <AssemblyTitle>455th vAEW SRS Client</AssemblyTitle>
+        <Description>455th vAEW SRS client with OpenFreq receiver DSP</Description>
         <ApplicationVersion>2.4.1.0</ApplicationVersion>
         <AssemblyVersion>2.4.1.0</AssemblyVersion>
         <FileVersion>2.4.1.0</FileVersion>

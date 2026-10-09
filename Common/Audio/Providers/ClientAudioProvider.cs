@@ -9,6 +9,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Utility;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Helpers;
+using OpenFreqAudio;
 
 namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers;
 
@@ -19,6 +20,8 @@ public class ClientAudioProvider : AudioProvider
 
     //progress per radio
     private readonly Dictionary<string, int>[] ambientEffectProgress;
+    private readonly ProceduralAmbientProcessor[] proceduralAmbientProcessors;
+    private readonly ProceduralAmbientProcessor.Profile?[] proceduralAmbientProfiles;
 
     private readonly CachedAudioEffectProvider audioEffectProvider = CachedAudioEffectProvider.Instance;
     private readonly ClientTransmissionPipelineProvider pipeline = new ClientTransmissionPipelineProvider();
@@ -47,6 +50,8 @@ public class ClientAudioProvider : AudioProvider
 
 
         ambientEffectProgress = new Dictionary<string, int>[radios];
+        proceduralAmbientProcessors = new ProceduralAmbientProcessor[radios];
+        proceduralAmbientProfiles = new ProceduralAmbientProcessor.Profile?[radios];
 
         for (var i = 0; i < radios; i++) ambientEffectProgress[i] = new Dictionary<string, int>();
     }
@@ -175,6 +180,21 @@ public class ClientAudioProvider : AudioProvider
         var abType = ambient?.abType;
 
         if (string.IsNullOrEmpty(abType)) return;
+
+        if (ProceduralAmbientProcessor.TryMapAircraft(abType, out var proceduralProfile))
+        {
+            if (proceduralAmbientProcessors[receiveRadio] == null ||
+                proceduralAmbientProfiles[receiveRadio] != proceduralProfile)
+            {
+                proceduralAmbientProcessors[receiveRadio] =
+                    new ProceduralAmbientProcessor(Constants.OUTPUT_SAMPLE_RATE, proceduralProfile);
+                proceduralAmbientProfiles[receiveRadio] = proceduralProfile;
+            }
+
+            var proceduralVolume = Math.Clamp(ambient.vol * ambientCockpitEffectVolume, 0f, 1f);
+            proceduralAmbientProcessors[receiveRadio].Process(pcmAudio, proceduralVolume);
+            return;
+        }
 
         var effect = audioEffectProvider.GetAmbientEffect(abType);
         

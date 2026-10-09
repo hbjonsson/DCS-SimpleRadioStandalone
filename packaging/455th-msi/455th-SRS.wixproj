@@ -1,0 +1,12 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>455th-SRS-$(ProductVersion)-win-x64</OutputName>
+    <DefineConstants>PayloadDir=$(PayloadDir);ProductVersion=$(ProductVersion);DialogBmp=$(DialogBmp);BannerBmp=$(BannerBmp)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>

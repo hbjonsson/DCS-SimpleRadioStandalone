@@ -324,7 +324,7 @@ public class GlobalSettingsStore
 
         { GlobalSettingsKeys.RequireAdmin.ToString(), "false" },
 
-        { GlobalSettingsKeys.AutoSelectSettingsProfile.ToString(), "false" },
+        { GlobalSettingsKeys.AutoSelectSettingsProfile.ToString(), "true" },
 
         { GlobalSettingsKeys.LotATCIncomingUDP.ToString(), "10710" },
         { GlobalSettingsKeys.LotATCOutgoingUDP.ToString(), "10711" },
@@ -337,7 +337,7 @@ public class GlobalSettingsStore
 
         { GlobalSettingsKeys.IdleTimeOut.ToString(), "600" }, // 10 mins
 
-        { GlobalSettingsKeys.AllowRecording.ToString(), "false" },
+        { GlobalSettingsKeys.AllowRecording.ToString(), "true" },
         { GlobalSettingsKeys.RecordAudio.ToString(), "false" },
         { GlobalSettingsKeys.SingleFileMixdown.ToString(), "false" },
         { GlobalSettingsKeys.RecordingQuality.ToString(), "V3" },
