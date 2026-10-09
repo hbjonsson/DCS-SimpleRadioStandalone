@@ -561,4 +561,14 @@
           <Generator>PublicResXFileCodeGenerator</Generator>
         </EmbeddedResource>
     </ItemGroup>
+    <!-- WebRtcVadSharp 1.3.2 publishes its native DLL beneath runtimes\, but
+         does not register it as a runtime asset. P/Invoke therefore requires
+         the x64 DLL beside the executable. -->
+    <Target Name="CopyWebRtcVadNativeToPublishRoot"
+            AfterTargets="PublishWebRtcVadFiles">
+        <Copy SourceFiles="$(PublishDir)runtimes\win-x64\native\WebRtcVad.dll"
+              DestinationFolder="$(PublishDir)"
+              SkipUnchangedFiles="true"
+              Condition="Exists('$(PublishDir)runtimes\win-x64\native\WebRtcVad.dll')" />
+    </Target>
 </Project>
