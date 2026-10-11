@@ -1184,15 +1184,11 @@
                                     ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
                                 <Label HorizontalContentAlignment="Center"
                                        Content="{x:Static p:Resources.OpenFreqReceiveEffects}"
-                                       Margin="0,8,0,0" />
+                                       Margin="0,8,0,0"
+                                       ToolTip="{x:Static p:Resources.OpenFreqReceiveEffectsHelp}" />
                                 <clientSettingsControl:SettingsToggleControl
-                                    ToggleValue="{Binding OpenFreqReceiveEffects, Mode=TwoWay}" />
-                                <TextBlock Text="{x:Static p:Resources.OpenFreqReceiveEffectsHelp}"
-                                           TextWrapping="Wrap"
-                                           TextAlignment="Center"
-                                           Opacity="0.7"
-                                           FontSize="11"
-                                           Margin="4,4,4,0" />
+                                    ToggleValue="{Binding OpenFreqReceiveEffects, Mode=TwoWay}"
+                                    ToolTip="{x:Static p:Resources.OpenFreqReceiveEffectsHelp}" />
                             </StackPanel>
 
 
