@@ -42,6 +42,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE"
 }
 
+$webRtcVadDll = Join-Path $clientOutput "WebRtcVad.dll"
+if (-not (Test-Path -LiteralPath $webRtcVadDll)) {
+    throw "Publish payload is missing WebRtcVad.dll beside the executable at $webRtcVadDll"
+}
+
 Copy-Item (Join-Path $repoRoot "LICENSE") (Join-Path $clientOutput "LICENSE.txt")
 Copy-Item `
     (Join-Path $repoRoot "libs\OpenFreqAudio\LICENSE.md") `

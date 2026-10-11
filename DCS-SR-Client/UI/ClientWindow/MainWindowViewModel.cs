@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -210,6 +211,31 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
             if (_audioPreview == null || !_audioPreview.IsPreviewing || IsConnected)
                 return Resources.PreviewAudio;
             return Resources.PreviewAudioStop;
+        }
+    }
+
+    public IReadOnlyList<string> PreviewAircraftOptions { get; } =
+    [
+        "f16", "f15", "a10", "fa18", "jet", "uh60", "uh1", "ah64", "mi8", "ch47",
+        "hercules", "m2000", "jf17", "f14", "a4", "prop", "spitfire", "bf109"
+    ];
+
+    public string SelectedPreviewAircraft
+    {
+        get
+        {
+            var raw = _globalSettings.ProfileSettingsStore.GetClientSettingString(
+                ProfileSettingsKeys.PreviewAircraft);
+            return string.IsNullOrWhiteSpace(raw) ? "f16" : raw.Trim().ToLowerInvariant();
+        }
+        set
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? "f16" : value.Trim().ToLowerInvariant();
+            _globalSettings.ProfileSettingsStore.SetClientSettingString(
+                ProfileSettingsKeys.PreviewAircraft, normalized);
+            if (_audioPreview != null)
+                _audioPreview.PreviewAircraft = normalized;
+            NotifyPropertyChanged(nameof(SelectedPreviewAircraft));
         }
     }
 
@@ -675,6 +701,7 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
                 Task.Run(async () => await ShowMicPassthroughWarningAsync()).Wait();
 
                 _audioPreview = new AudioPreview();
+                _audioPreview.PreviewAircraft = SelectedPreviewAircraft;
                 _audioPreview.SpeakerBoost = VolumeConversionHelper.ConvertVolumeSliderToScale((float)SpeakerBoost);
                 _audioPreview.StartPreview(AudioOutput.WindowsN);
             }
@@ -705,17 +732,31 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
             }
             catch (Exception ex)
             {
-                Logger.Error(ex,
-                    "Unable to get audio device - likely output device error - Pick another. Error:" +
-                    ex.Message);
+                Logger.Error(ex, "Unable to start audio session. Error:" + ex.Message);
                 Stop();
 
-                var audioOutputErrorDialog = TaskDialog.ShowDialog(new TaskDialogPage
+                var isMissingNative =
+                    ex is DllNotFoundException
+                    || ex.InnerException is DllNotFoundException
+                    || (ex.Message?.Contains("WebRtcVad", StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (ex.Message?.Contains("webrtcvad", StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (ex.Message?.Contains("Unable to load DLL", StringComparison.OrdinalIgnoreCase) ?? false);
+
+                var caption = isMissingNative ? "Installation Problem" : "Audio Device Problem";
+                var heading = isMissingNative
+                    ? "A required program file is missing"
+                    : "Could not start the selected audio devices";
+                var body = isMissingNative
+                    ? "Run the latest 455th SRS installer to repair this install.\n\n" +
+                      $"Details: {ex.Message}\n\nSee clientlog.txt in the Client install folder for support."
+                    : "Try a different Output or Input device in 455th SRS settings, and check Windows privacy permissions for microphone/speakers if needed.\n\n" +
+                      $"Details: {ex.Message}\n\nSee clientlog.txt in the Client install folder for support.";
+
+                TaskDialog.ShowDialog(new TaskDialogPage
                 {
-                    Caption = "Audio Output Error",
-                    Heading = "Problem initialising Audio Output!",
-                    Text =
-                        "Try a different Output device and check privacy settings\n\nIf the problem persists, disable ALL other outputs and restart DCS SRS",
+                    Caption = caption,
+                    Heading = heading,
+                    Text = body,
                     Icon = TaskDialogIcon.Error,
                     Buttons =
                     {

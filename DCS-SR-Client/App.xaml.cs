@@ -70,7 +70,7 @@ public partial class App : Application
         var location = AppDomain.CurrentDomain.BaseDirectory;
         //var location = Assembly.GetExecutingAssembly().Location;
 
-        var dllsToValidate = new[] { "opus.dll", "speexdsp.dll" };
+        var dllsToValidate = new[] { "opus.dll", "speexdsp.dll", "WebRtcVad.dll" };
         foreach (var dll in dllsToValidate)
         {
             if (!File.Exists(location + "\\" + dll))
@@ -78,8 +78,10 @@ public partial class App : Application
                 TaskDialog.ShowDialog(new TaskDialogPage
                 {
                     Caption = ForkBranding.ProductName,
-                    Heading = $"You are missing the {dll}",
-                    Text = $"Reinstall using the Installer and don't move the client from the installation directory!",
+                    Heading = $"Missing required file: {dll}",
+                    Text =
+                        $"Run the latest 455th SRS installer to repair this installation.\n\n" +
+                        $"Expected beside the app:\n{location}",
                     Icon = TaskDialogIcon.Error,
                     Buttons = { TaskDialogButton.OK }
                 });

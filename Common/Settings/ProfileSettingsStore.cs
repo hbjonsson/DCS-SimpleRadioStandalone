@@ -78,7 +78,12 @@ public enum ProfileSettingsKeys
     /// Local receive effects engine: "SRS" (default) or "OpenFreq".
     /// Affects playback only — wire protocol unchanged.
     /// </summary>
-    ReceiverEffectsEngine
+    ReceiverEffectsEngine,
+
+    /// <summary>
+    /// Aircraft ambient identifier used by audio preview (e.g. f16, a10, uh60).
+    /// </summary>
+    PreviewAircraft
 }
 
 public enum ServerPresetConfiguration
@@ -177,6 +182,7 @@ public class ProfileSettingsStore
         { ProfileSettingsKeys.Radio10Channel.ToString(), "0" },
         { ProfileSettingsKeys.IntercomChannel.ToString(), "0" },
         { ProfileSettingsKeys.ReceiverEffectsEngine.ToString(), nameof(ReceiverEffectsEngine.OpenFreq) },
+        { ProfileSettingsKeys.PreviewAircraft.ToString(), "f16" },
     };
 
     public static readonly List<string> ServerPresetSettings;

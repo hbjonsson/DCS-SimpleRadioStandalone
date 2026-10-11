@@ -10,8 +10,13 @@ public class ProceduralAmbientProcessorTests
     [TestMethod]
     [DataRow("f16", ProceduralAmbientProcessor.Profile.AirF16)]
     [DataRow("F15", ProceduralAmbientProcessor.Profile.AirF15)]
+    [DataRow("a10", ProceduralAmbientProcessor.Profile.AirA10)]
     [DataRow("fa18", ProceduralAmbientProcessor.Profile.AirGeneric)]
     [DataRow("jet", ProceduralAmbientProcessor.Profile.AirGeneric)]
+    [DataRow("ground", ProceduralAmbientProcessor.Profile.Ground)]
+    [DataRow("mrap", ProceduralAmbientProcessor.Profile.Ground)]
+    [DataRow("awacs", ProceduralAmbientProcessor.Profile.Stationary)]
+    [DataRow("atc", ProceduralAmbientProcessor.Profile.Stationary)]
     public void TryMapAircraft_MapsSupportedJets(
         string aircraft,
         ProceduralAmbientProcessor.Profile expected)

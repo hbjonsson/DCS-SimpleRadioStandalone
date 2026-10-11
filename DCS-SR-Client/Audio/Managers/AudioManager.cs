@@ -466,7 +466,9 @@ public class AudioManager : IHandle<SRClientUpdateMessage>
         {
             Caption = "Audio Output Error",
             Heading = message,
-            Text = "Try a different output device and please post your client log to the support Discord server.",
+            Text =
+                "Try a different output device in 455th SRS settings, and check Windows privacy permissions if needed.\n\n" +
+                "See clientlog.txt in the Client install folder for support.",
             Icon = TaskDialogIcon.Error,
             Buttons =
             {

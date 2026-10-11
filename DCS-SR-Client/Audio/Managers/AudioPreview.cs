@@ -4,11 +4,15 @@ using System.Diagnostics;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Utility;
 using Ciribob.DCS.SimpleRadio.Standalone.Client.Singletons;
 using Ciribob.DCS.SimpleRadio.Standalone.Common;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Opus.Core;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Settings;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NLog;
+using OpenFreqAudio;
 using Application = Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Opus.Application;
 using Ciribob.DCS.SimpleRadio.Standalone.Client.Audio.Utility;
 using System.Windows.Forms;
@@ -21,6 +25,7 @@ internal class AudioPreview
 
     private readonly AudioInputSingleton _audioInputSingleton = AudioInputSingleton.Instance;
     private readonly AudioOutputSingleton _audioOutputSingleton = AudioOutputSingleton.Instance;
+    private readonly ProfileSettingsStore _profileSettings = GlobalSettingsStore.Instance.ProfileSettingsStore;
 
     private readonly Queue<short> _micInputQueue = new(Constants.MIC_SEGMENT_FRAMES * 3);
 
@@ -28,14 +33,11 @@ internal class AudioPreview
     private BufferedWaveProvider _buffBufferedWaveProvider;
     private OpusDecoder _decoder;
     private OpusEncoder _encoder;
-    private BufferedWaveProvider _playBuffer;
     private EventDrivenResampler _resampler;
 
     private float _speakerBoost = 1.0f;
 
     private SpeexProcessor _speex;
-    //private readonly CircularBuffer _circularBuffer = new CircularBuffer();
-
     private VolumeSampleProviderWithPeak _volumeSampleProvider;
 
     private WasapiCapture _wasapiCapture;
@@ -44,6 +46,13 @@ internal class AudioPreview
     private SRSWasapiOut _waveOut;
 
     private bool windowsN;
+    private bool _useOpenFreqPath;
+    private OpenFreqReceiverEffectsPipeline _openFreqPipeline;
+    private ProceduralAmbientProcessor _proceduralAmbient;
+    private ProceduralAmbientProcessor.Profile? _proceduralProfile;
+    private CachedAudioEffect _wavAmbient;
+    private int _wavAmbientProgress;
+    private string _previewAircraft = "f16";
 
     public float MicBoost { get; set; } = 1.0f;
 
@@ -62,9 +71,28 @@ internal class AudioPreview
     public float MicMax { get; set; } = -100;
     public float SpeakerMax { get; set; } = -100;
 
+    public string PreviewAircraft
+    {
+        get => _previewAircraft;
+        set
+        {
+            _previewAircraft = string.IsNullOrWhiteSpace(value) ? "f16" : value.Trim().ToLowerInvariant();
+            _proceduralAmbient = null;
+            _proceduralProfile = null;
+            _wavAmbient = null;
+            _wavAmbientProgress = 0;
+        }
+    }
+
     public void StartPreview(bool windowsN)
     {
         this.windowsN = windowsN;
+        PreviewAircraft = _profileSettings.GetClientSettingString(ProfileSettingsKeys.PreviewAircraft);
+        _useOpenFreqPath = OpenFreqReceiverEffectsPipeline.IsOpenFreqAmEnabled();
+        _openFreqPipeline = _useOpenFreqPath
+            ? new OpenFreqReceiverEffectsPipeline(radioId: 0, sampleRate: Constants.OUTPUT_SAMPLE_RATE)
+            : null;
+
         try
         {
             MMDevice speakers = null;
@@ -80,10 +108,12 @@ internal class AudioPreview
             _buffBufferedWaveProvider.ReadFully = true;
             _buffBufferedWaveProvider.DiscardOnBufferOverflow = true;
 
-            var filter = new RadioFilter(_buffBufferedWaveProvider.ToSampleProvider());
+            ISampleProvider sampleProvider = _buffBufferedWaveProvider.ToSampleProvider();
+            if (!_useOpenFreqPath)
+                sampleProvider = new RadioFilter(sampleProvider);
 
             //add final volume boost to all mixed audio
-            _volumeSampleProvider = new VolumeSampleProviderWithPeak(filter,
+            _volumeSampleProvider = new VolumeSampleProviderWithPeak(sampleProvider,
                 peak => { SpeakerMax = (float)VolumeConversionHelper.ConvertFloatToDB(peak); });
             _volumeSampleProvider.Volume = SpeakerBoost;
 
@@ -92,7 +122,6 @@ internal class AudioPreview
                 if (_volumeSampleProvider.WaveFormat.Channels == 2)
                     _waveOut.Init(_volumeSampleProvider.ToMono());
                 else
-                    //already mono
                     _waveOut.Init(_volumeSampleProvider);
             }
             else
@@ -100,7 +129,6 @@ internal class AudioPreview
                 if (_volumeSampleProvider.WaveFormat.Channels == 1)
                     _waveOut.Init(_volumeSampleProvider.ToStereo());
                 else
-                    //already stereo
                     _waveOut.Init(_volumeSampleProvider);
             }
 
@@ -118,7 +146,6 @@ internal class AudioPreview
         try
         {
             _speex = new SpeexProcessor(Constants.MIC_SEGMENT_FRAMES, Constants.MIC_SAMPLE_RATE);
-            //opus
             _encoder = OpusEncoder.Create(Constants.MIC_SAMPLE_RATE, 1, Application.Voip);
             _encoder.ForwardErrorCorrection = false;
             _decoder = OpusDecoder.Create(Constants.OUTPUT_SAMPLE_RATE, 1);
@@ -140,15 +167,11 @@ internal class AudioPreview
                     Logger.Warn(ex, "Failed to forcibly unmute: " + ex.Message);
                 }
             }
-            
 
             _wasapiCapture = new WasapiCapture(device, true);
             _wasapiCapture.ShareMode = AudioClientShareMode.Shared;
             _wasapiCapture.DataAvailable += WasapiCaptureOnDataAvailable;
             _wasapiCapture.RecordingStopped += WasapiCaptureOnRecordingStopped;
-
-            //debug wave file
-            //      _waveFile = new WaveFileWriter(@"C:\Temp\Test-Preview.wav", new WaveFormat(AudioManager.INPUT_SAMPLE_RATE, 16, 1));
 
             _wasapiCapture.StartRecording();
         }
@@ -166,8 +189,9 @@ internal class AudioPreview
         var audioInputErrorDialog = TaskDialog.ShowDialog(new TaskDialogPage
         {
             Caption = "Audio Input Error",
-            Heading = "\"Problem initialising Audio Input!",
-            Text = "If you are using Windows 10, this could be caused by your privacy settings (make sure to allow apps to access your microphone).\nAlternatively, try a different Input device and please post your client log to the support Discord server.",
+            Heading = "Problem initialising Audio Input!",
+            Text =
+                "If you are using Windows 10/11, check privacy settings (allow apps to access your microphone).\nAlternatively, try a different Input device.\n\nSee clientlog.txt in the Client install folder for support.",
             Icon = TaskDialogIcon.Error,
             Buttons =
                 {
@@ -178,48 +202,31 @@ internal class AudioPreview
                     },
                     new TaskDialogButton
                     {
-                        Text =  "JOIN DISCORD SERVER",
-                        Tag = 2
-                    },
-                    new TaskDialogButton
-                    {
                         Text = "CLOSE",
                         Tag = 3
                     }
                 }
         });
 
-        if (audioInputErrorDialog.Tag is int choice)
+        if (audioInputErrorDialog.Tag is int choice && choice == 1)
         {
-            switch (choice)
-            {
-                case 1:
-                    Process.Start(new ProcessStartInfo("ms-settings:privacy-microphone")
-                    { UseShellExecute = true });
-                    break;
-                case 2:
-                    Process.Start(new ProcessStartInfo("https://discord.gg/baw7g3t")
-                    { UseShellExecute = true });
-                    break;
-            }
+            Process.Start(new ProcessStartInfo("ms-settings:privacy-microphone")
+            { UseShellExecute = true });
         }
     }
 
     private void ShowOutputError(string message)
     {
-        var audioOutputErrorDialog = TaskDialog.ShowDialog(new TaskDialogPage
+        TaskDialog.ShowDialog(new TaskDialogPage
         {
             Caption = "Audio Output Error",
             Heading = message,
-            Text = "Try a different output device and please post your client log to the support Discord server.",
+            Text =
+                "Try a different output device in 455th SRS settings, and check Windows privacy permissions if needed.\n\n" +
+                "See clientlog.txt in the Client install folder for support.",
             Icon = TaskDialogIcon.Error,
             Buttons =
             {
-                new TaskDialogButton
-                {
-                    Text =  "JOIN DISCORD SERVER",
-                    Tag = 2
-                },
                 new TaskDialogButton
                 {
                     Text = "CLOSE",
@@ -227,17 +234,6 @@ internal class AudioPreview
                 }
             }
         });
-
-        if (audioOutputErrorDialog.Tag is int choice)
-        {
-            switch (choice)
-            {
-                case 2:
-                    Process.Start(new ProcessStartInfo("https://discord.gg/baw7g3t")
-                    { UseShellExecute = true });
-                    break;
-            }
-        }
     }
 
     private void WasapiCaptureOnRecordingStopped(object sender, StoppedEventArgs e)
@@ -245,90 +241,147 @@ internal class AudioPreview
         Logger.Error("Recording Stopped");
     }
 
-    //Stopwatch _stopwatch = new Stopwatch();
-
     private void WasapiCaptureOnDataAvailable(object sender, WaveInEventArgs e)
     {
         if (_resampler == null)
             _resampler = new EventDrivenResampler(windowsN, _wasapiCapture.WaveFormat,
                 new WaveFormat(Constants.MIC_SAMPLE_RATE, 16, 1));
 
-        if (e.BytesRecorded > 0)
+        if (e.BytesRecorded <= 0)
+            return;
+
+        var resampledPCM16Bit = _resampler.Resample(e.Buffer, e.BytesRecorded);
+
+        short[] pcmShort = null;
+
+        for (var i = 0; i < resampledPCM16Bit.Length; i++) _micInputQueue.Enqueue(resampledPCM16Bit[i]);
+
+        while (pcmShort != null || _micInputQueue.Count >= Constants.MIC_SEGMENT_FRAMES)
         {
-            //Logger.Info($"Time: {_stopwatch.ElapsedMilliseconds} - Bytes: {e.BytesRecorded}");
-            var resampledPCM16Bit = _resampler.Resample(e.Buffer, e.BytesRecorded);
-
-            // Logger.Info($"Time: {_stopwatch.ElapsedMilliseconds} - Bytes: {resampledPCM16Bit.Length}");
-
-
-            //fill sound buffer
-
-            short[] pcmShort = null;
-
-            for (var i = 0; i < resampledPCM16Bit.Length; i++) _micInputQueue.Enqueue(resampledPCM16Bit[i]);
-
-            //read out the queue
-            while (pcmShort != null || _micInputQueue.Count >= Constants.MIC_SEGMENT_FRAMES)
+            if (pcmShort == null)
             {
-                //null sound buffer so read from the queue
-                if (pcmShort == null)
+                pcmShort = new short[Constants.MIC_SEGMENT_FRAMES];
+
+                for (var i = 0; i < Constants.MIC_SEGMENT_FRAMES; i++)
+                    pcmShort[i] = _micInputQueue.Dequeue();
+            }
+
+            try
+            {
+                _speex.Process(new ArraySegment<short>(pcmShort));
+
+                MicMax = (float)VolumeConversionHelper.CalculateRMS(pcmShort);
+
+                var pcmBytes = new byte[pcmShort.Length * 2];
+                Buffer.BlockCopy(pcmShort, 0, pcmBytes, 0, pcmBytes.Length);
+
+                int len;
+                var buff = _encoder.Encode(pcmBytes, pcmBytes.Length, out len);
+
+                if (buff != null && len > 0)
                 {
-                    pcmShort = new short[Constants.MIC_SEGMENT_FRAMES];
+                    var encoded = new byte[len];
+                    Buffer.BlockCopy(buff, 0, encoded, 0, len);
 
-                    for (var i = 0; i < Constants.MIC_SEGMENT_FRAMES; i++)
-                        pcmShort[i] = _micInputQueue.Dequeue();
-                }
+                    var decodedLength = 0;
+                    var decodedBytes = _decoder.Decode(encoded, len, out decodedLength);
 
-                try
-                {
-                    //process with Speex
-                    _speex.Process(new ArraySegment<short>(pcmShort));
-
-                    var rms = VolumeConversionHelper.CalculateRMS(pcmShort);
-
-                    //convert to dB
-                    MicMax = (float)rms;
-
-                    var pcmBytes = new byte[pcmShort.Length * 2];
-                    Buffer.BlockCopy(pcmShort, 0, pcmBytes, 0, pcmBytes.Length);
-
-                    //                 _buffBufferedWaveProvider.AddSamples(pcmBytes, 0, pcmBytes.Length);
-                    //encode as opus bytes
-                    int len;
-                    //need to get framing right for opus -
-                    var buff = _encoder.Encode(pcmBytes, pcmBytes.Length, out len);
-
-                    if (buff != null && len > 0)
+                    if (_useOpenFreqPath && _openFreqPipeline != null)
                     {
-                        //create copy with small buffer
-                        var encoded = new byte[len];
-
-                        Buffer.BlockCopy(buff, 0, encoded, 0, len);
-
-                        var decodedLength = 0;
-                        //now decode
-                        var decodedBytes = _decoder.Decode(encoded, len, out decodedLength);
-
-                        _buffBufferedWaveProvider.AddSamples(decodedBytes, 0, decodedLength);
-
-                        //            Logger.Info($"Time: {_stopwatch.ElapsedMilliseconds} - Added samples");
+                        var floats = Pcm16ToFloat(decodedBytes, decodedLength);
+                        ApplyPreviewAmbient(floats);
+                        var processed = new float[floats.Length];
+                        var segment = new TransmissionSegment(
+                            floats,
+                            Modulation.AM,
+                            frequencyHz: 251_000_000,
+                            receivingPower: 0.05,
+                            lineOfSightLoss: 0f,
+                            clientGuid: "PREVIEW");
+                        _openFreqPipeline.ProcessSegments(processed, new[] { segment });
+                        var outBytes = FloatToPcm16(processed);
+                        _buffBufferedWaveProvider.AddSamples(outBytes, 0, outBytes.Length);
                     }
                     else
                     {
-                        Logger.Error(
-                            $"Invalid Bytes for Encoding - {e.BytesRecorded} should be {Constants.MIC_SEGMENT_FRAMES} ");
+                        _buffBufferedWaveProvider.AddSamples(decodedBytes, 0, decodedLength);
                     }
                 }
-                catch (Exception ex)
+                else
                 {
-                    Logger.Error(ex, "Error encoding Opus! " + ex.Message);
+                    Logger.Error(
+                        $"Invalid Bytes for Encoding - {e.BytesRecorded} should be {Constants.MIC_SEGMENT_FRAMES} ");
                 }
-
-                pcmShort = null;
             }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Error encoding Opus! " + ex.Message);
+            }
+
+            pcmShort = null;
+        }
+    }
+
+    private void ApplyPreviewAmbient(Span<float> samples)
+    {
+        if (string.IsNullOrEmpty(PreviewAircraft) || samples.IsEmpty)
+            return;
+
+        if (ProceduralAmbientProcessor.TryMapAircraft(PreviewAircraft, out var profile))
+        {
+            if (_proceduralAmbient == null || _proceduralProfile != profile)
+            {
+                _proceduralAmbient = new ProceduralAmbientProcessor(Constants.OUTPUT_SAMPLE_RATE, profile);
+                _proceduralProfile = profile;
+            }
+
+            _proceduralAmbient.Process(samples, 1f);
+            return;
         }
 
-        //   _stopwatch.Restart();
+        _wavAmbient ??= CachedAudioEffectProvider.Instance.GetAmbientEffect(PreviewAircraft);
+        if (_wavAmbient == null || !_wavAmbient.Loaded || _wavAmbient.AudioEffectFloat == null)
+            return;
+
+        var effect = _wavAmbient.AudioEffectFloat;
+        for (var i = 0; i < samples.Length; i++)
+        {
+            if (_wavAmbientProgress >= effect.Length)
+                _wavAmbientProgress = 0;
+
+            var mixed = samples[i] + effect[_wavAmbientProgress] * 0.35f;
+            if (mixed is > -1f and < 1f)
+                samples[i] = mixed;
+
+            _wavAmbientProgress++;
+        }
+    }
+
+    private static float[] Pcm16ToFloat(byte[] pcm, int length)
+    {
+        var samples = length / 2;
+        var floats = new float[samples];
+        for (var i = 0; i < samples; i++)
+        {
+            var sample = (short)(pcm[i * 2] | (pcm[i * 2 + 1] << 8));
+            floats[i] = sample / 32768f;
+        }
+
+        return floats;
+    }
+
+    private static byte[] FloatToPcm16(float[] floats)
+    {
+        var bytes = new byte[floats.Length * 2];
+        for (var i = 0; i < floats.Length; i++)
+        {
+            var clamped = Math.Clamp(floats[i], -1f, 1f);
+            var sample = (short)Math.Round(clamped * 32767f);
+            bytes[i * 2] = (byte)(sample & 0xFF);
+            bytes[i * 2 + 1] = (byte)((sample >> 8) & 0xFF);
+        }
+
+        return bytes;
     }
 
     public void StopEncoding()
@@ -345,17 +398,11 @@ internal class AudioPreview
             _waveOut?.Dispose();
             _waveOut = null;
 
-            _playBuffer?.ClearBuffer();
-            _playBuffer = null;
-
             _encoder?.Dispose();
             _encoder = null;
 
             _decoder?.Dispose();
             _decoder = null;
-
-            _playBuffer?.ClearBuffer();
-            _playBuffer = null;
 
             _speex?.Dispose();
             _speex = null;
@@ -363,6 +410,12 @@ internal class AudioPreview
             _waveFile?.Flush();
             _waveFile?.Dispose();
             _waveFile = null;
+
+            _openFreqPipeline?.Reset();
+            _openFreqPipeline = null;
+            _proceduralAmbient = null;
+            _proceduralProfile = null;
+            _wavAmbient = null;
 
             SpeakerMax = -100;
             MicMax = -100;

@@ -191,7 +191,14 @@ public class ClientAudioProvider : AudioProvider
                 proceduralAmbientProfiles[receiveRadio] = proceduralProfile;
             }
 
-            var proceduralVolume = Math.Clamp(ambient.vol * ambientCockpitEffectVolume, 0f, 1f);
+            // OpenFreq owns AM tone: use native-like muffling wetness when engines are on,
+            // instead of DCS ambient.vol defaults around 0.15.
+            float proceduralVolume;
+            if (OpenFreqReceiverEffectsPipeline.ShouldOwnAmPath(modulation) && ambient.vol > 0.01f)
+                proceduralVolume = Math.Clamp(ambientCockpitEffectVolume, 0f, 1f);
+            else
+                proceduralVolume = Math.Clamp(ambient.vol * ambientCockpitEffectVolume, 0f, 1f);
+
             proceduralAmbientProcessors[receiveRadio].Process(pcmAudio, proceduralVolume);
             return;
         }
@@ -349,19 +356,28 @@ public class ClientAudioProvider : AudioProvider
         var segment = new TransmissionSegment(transmission);
 
         var segmentAudio = segment.Audio.AsSpan();
+        var openFreqOwnsAm = OpenFreqReceiverEffectsPipeline.ShouldOwnAmPath(transmission.Modulation);
+
         if (transmission.Decryptable)
         {
-            
-            //adjust for LOS + Distance + Volume
-            AdjustVolumeForLoss(transmission.Modulation, transmission.ReceivingPower, transmission.LineOfSightLoss, segmentAudio);
-            AddCockpitAmbientAudio(transmission.ReceivedRadio, transmission.Modulation, transmission.Ambient, segmentAudio);
+            // OpenFreq receive maps power/LOS into SNR itself — avoid double attenuation.
+            if (!openFreqOwnsAm)
+            {
+                AdjustVolumeForLoss(transmission.Modulation, transmission.ReceivingPower,
+                    transmission.LineOfSightLoss, segmentAudio);
+            }
+
+            AddCockpitAmbientAudio(transmission.ReceivedRadio, transmission.Modulation, transmission.Ambient,
+                segmentAudio);
         }
         else
         {
             AddEncryptionFailureEffect(segmentAudio);
         }
 
-        pipeline.Process(transmission, segmentAudio);
+        // OpenFreq owns AM radio character; skip SRS TX radio-model FX on that path.
+        if (!openFreqOwnsAm)
+            pipeline.Process(transmission, segmentAudio);
 
         JitterBufferProviderInterface[radioId].Dispose(ref transmission);
         return segment;

@@ -39,6 +39,7 @@ public class RadioMixingProvider : ISampleProvider
     private int availableInBuffer = 0;
     private long _lastEngineRefresh;
     private ReceiverEffectsEngine _receiverEffectsEngine = ReceiverEffectsEngine.SRS;
+    private int _openFreqDrainSamplesRemaining;
 
     //  private readonly WaveFileWriter waveWriter;
     public RadioMixingProvider(WaveFormat waveFormat, int radioId)
@@ -143,10 +144,11 @@ public class RadioMixingProvider : ISampleProvider
                 _audioRecordingManager.AppendClientAudio(radioId, segments);
             }
 
-            // #FIXME: Should copy into mixBuffer, and use that throughout as our primary mixdown here.
-            monoOffset += HandleStartEndTones(hasIncomingAudio || availableInBuffer > 0, ky58Tone, monoBuffer, monoOffset, monoBufferLength - monoOffset);
+            RefreshReceiverEngine();
+            var openFreqOwnsAm = false;
+            var openFreqRxActive = false;
 
-            // Queue new audio (if any).
+            // Queue new audio (if any), or continue a short OpenFreq post-TX drain.
             if (hasIncomingAudio)
             {
                 try
@@ -161,14 +163,19 @@ public class RadioMixingProvider : ISampleProvider
                     var targetSpan = mixBuffer.AsSpan(availableInBuffer, longestSegmentLength);
                     targetSpan.Clear();
 
-                    RefreshReceiverEngine();
                     if (_receiverEffectsEngine == ReceiverEffectsEngine.OpenFreq
                         && OpenFreqReceiverEffectsPipeline.CanProcess(segments))
                     {
+                        openFreqOwnsAm = true;
+                        lastModulation = Modulation.AM;
                         openFreqPipeline.ProcessSegments(targetSpan, segments);
+                        openFreqRxActive = openFreqPipeline.WasSquelchOpen;
+                        _openFreqDrainSamplesRemaining =
+                            OpenFreqReceiverEffectsPipeline.DrainSampleCount(WaveFormat.SampleRate);
                     }
                     else
                     {
+                        _openFreqDrainSamplesRemaining = 0;
                         // #TODO: pass receiving radio model name.
                         pipeline.ProcessSegments(targetSpan, segments, null);
                     }
@@ -185,6 +192,58 @@ public class RadioMixingProvider : ISampleProvider
                     logger.Error(e, "Error mixing segments");
                 }
             }
+            else if (_openFreqDrainSamplesRemaining > 0
+                     && _receiverEffectsEngine == ReceiverEffectsEngine.OpenFreq)
+            {
+                try
+                {
+                    openFreqOwnsAm = true;
+                    var drainFrames = Math.Min(
+                        monoBufferLength - monoOffset,
+                        _openFreqDrainSamplesRemaining);
+                    if (drainFrames <= 0)
+                        drainFrames = Math.Min(
+                            Constants.OUTPUT_SEGMENT_FRAMES,
+                            _openFreqDrainSamplesRemaining);
+
+                    var totalSize = availableInBuffer + drainFrames;
+                    if (mixBuffer == null || mixBuffer.Length < totalSize)
+                    {
+                        Array.Resize(ref mixBuffer, totalSize);
+                    }
+
+                    var targetSpan = mixBuffer.AsSpan(availableInBuffer, drainFrames);
+                    targetSpan.Clear();
+                    openFreqPipeline.ProcessDrain(targetSpan);
+                    AudioManipulationHelper.ClipArray(targetSpan);
+                    availableInBuffer += targetSpan.Length;
+                    _openFreqDrainSamplesRemaining = Math.Max(
+                        0,
+                        _openFreqDrainSamplesRemaining - targetSpan.Length);
+                    openFreqRxActive = openFreqPipeline.WasSquelchOpen
+                                       || _openFreqDrainSamplesRemaining > 0;
+
+                    monoOffset += ReadMixBuffer(monoBuffer, monoOffset, monoBufferLength - monoOffset);
+                }
+                catch (Exception e)
+                {
+                    logger.Error(e, "Error draining OpenFreq receiver");
+                    _openFreqDrainSamplesRemaining = 0;
+                }
+            }
+
+            var rxActive = openFreqOwnsAm
+                ? openFreqRxActive
+                : hasIncomingAudio || availableInBuffer > 0;
+
+            // #FIXME: Should copy into mixBuffer, and use that throughout as our primary mixdown here.
+            monoOffset += HandleStartEndTones(
+                rxActive,
+                ky58Tone,
+                openFreqOwnsAm,
+                monoBuffer,
+                monoOffset,
+                monoBufferLength - monoOffset);
         }
 
         // Did we consume everything? Make sure we don't keep a buffer too big.
@@ -256,7 +315,13 @@ public class RadioMixingProvider : ISampleProvider
             openFreqPipeline.Reset();
     }
 
-    private int HandleStartEndTones(bool isActive, bool encryption, float[] buffer, int offset, int count)
+    private int HandleStartEndTones(
+        bool isActive,
+        bool encryption,
+        bool suppressGenericRadioClicks,
+        float[] buffer,
+        int offset,
+        int count)
     {
         if (isActive ^ IsReceiving)
         {
@@ -265,7 +330,7 @@ public class RadioMixingProvider : ISampleProvider
             {
                 // Start
                 effectsBuffer.Reset(); // In case we were playing the end tone, cut it short.
-                PlaySoundEffectStartReceive(encryption, lastModulation);
+                PlaySoundEffectStartReceive(encryption, lastModulation, suppressGenericRadioClicks);
                 IsReceiving = true;
             }
             else
@@ -275,7 +340,7 @@ public class RadioMixingProvider : ISampleProvider
                 //TODO not sure about simultaneous
                 //We used to have this logic https://github.com/ciribob/DCS-SimpleRadioStandalone/blob/cd8fcbf7e2b2fafcf30875fc958276e3083e0ebb/DCS-SR-Client/Network/UDPVoiceHandler.cs#L135
                 //if (!radioReceivingState.IsSimultaneous)
-                PlaySoundEffectEndReceive(lastModulation);
+                PlaySoundEffectEndReceive(lastModulation, suppressGenericRadioClicks);
             }
         }
 
@@ -308,7 +373,7 @@ public class RadioMixingProvider : ISampleProvider
         return samplesRead;
     }
 
-    private void PlaySoundEffectEndReceive(Modulation modulation)
+    private void PlaySoundEffectEndReceive(Modulation modulation, bool suppressGenericRadioClicks)
     {
         if (!profileSettings.GetClientSettingBool(ProfileSettingsKeys.RadioRxEffects_End)) return;
 
@@ -325,6 +390,10 @@ public class RadioMixingProvider : ISampleProvider
             var effect = _cachedAudioEffectsProvider.MIDSEndTone;
             if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
         }
+        else if (suppressGenericRadioClicks)
+        {
+            // OpenFreq AM owns keying character via squelch; skip RADIO_TRANS_* WAVs.
+        }
         else
         {
             var effect = _cachedAudioEffectsProvider.SelectedRadioTransmissionEndEffect;
@@ -333,6 +402,12 @@ public class RadioMixingProvider : ISampleProvider
     }
 
     public void PlaySoundEffectStartReceive(bool encrypted, Modulation modulation)
+        => PlaySoundEffectStartReceive(encrypted, modulation, suppressGenericRadioClicks: false);
+
+    private void PlaySoundEffectStartReceive(
+        bool encrypted,
+        Modulation modulation,
+        bool suppressGenericRadioClicks)
     {
         if (!profileSettings.GetClientSettingBool(ProfileSettingsKeys.RadioRxEffects_Start)) return;
 
@@ -354,6 +429,10 @@ public class RadioMixingProvider : ISampleProvider
         {
             var effect = _cachedAudioEffectsProvider.KY58EncryptionEndTone;
             if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+        }
+        else if (suppressGenericRadioClicks)
+        {
+            // OpenFreq AM owns keying character via squelch; skip RADIO_TRANS_* WAVs.
         }
         else
         {

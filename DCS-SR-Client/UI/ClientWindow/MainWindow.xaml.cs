@@ -55,18 +55,18 @@ public partial class MainWindow : MetroWindow
         Left = _globalSettings.GetPositionSetting(GlobalSettingsKeys.ClientX).DoubleValue;
         Top = _globalSettings.GetPositionSetting(GlobalSettingsKeys.ClientY).DoubleValue;
 
-        Title = ForkBranding.ProductName + " - " + UpdaterChecker.VERSION;
+        Title = ForkBranding.ProductName + " - " + ForkBranding.DisplayVersion;
 
         if (_globalSettings.GetClientSettingBool(GlobalSettingsKeys.StartMinimised))
         {
             Hide();
             WindowState = WindowState.Minimized;
 
-            Logger.Info("Started " + ForkBranding.ProductName + " " + UpdaterChecker.VERSION + " minimized");
+            Logger.Info("Started " + ForkBranding.ProductName + " " + ForkBranding.DisplayVersion + " minimized");
         }
         else
         {
-            Logger.Info("Started " + ForkBranding.ProductName + " " + UpdaterChecker.VERSION);
+            Logger.Info("Started " + ForkBranding.ProductName + " " + ForkBranding.DisplayVersion);
         }
 
         DataContext = new MainWindowViewModel()

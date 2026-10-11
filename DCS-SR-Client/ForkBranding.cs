@@ -14,6 +14,15 @@ public static class ForkBranding
     public const string SingleInstanceMutex = "455th-DCS-SimpleRadioStandalone";
     public const string RegistryKey = @"HKEY_CURRENT_USER\SOFTWARE\455th-DCS-SR-Standalone";
 
+    /// <summary>Upstream SRS base version (Assembly/File/MSI ProductVersion).</summary>
+    public const string BaseVersion = "2.4.1.0";
+
+    /// <summary>Fork packaging iteration for SemVer build metadata (+N).</summary>
+    public const int ForkBuild = 2;
+
+    /// <summary>User-facing version, e.g. 2.4.1.0+2.</summary>
+    public static string DisplayVersion => $"{BaseVersion}+{ForkBuild}";
+
     public static string SettingsDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "455th-SRS");
 }

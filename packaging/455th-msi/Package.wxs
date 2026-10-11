@@ -8,7 +8,10 @@
       Scope="perMachine">
 
     <SummaryInformation Description="455th SRS Client with OpenFreq receiver DSP" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of 455th SRS is already installed." />
+    <MajorUpgrade
+        AllowSameVersionUpgrades="yes"
+        Schedule="afterInstallInitialize"
+        DowngradeErrorMessage="A newer version of 455th SRS is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Icon Id="AppIcon.exe" SourceFile="$(var.PayloadDir)\455th-SR-ClientRadio.exe" />
@@ -16,7 +19,9 @@
     <Property Id="ARPCOMMENTS" Value="455th SRS Client with OpenFreq receiver DSP" />
 
     <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="455th-SRS" />
+      <Directory Id="INSTALLFOLDER" Name="455th-SRS">
+        <Directory Id="ClientFolder" Name="Client" />
+      </Directory>
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder">
@@ -33,7 +38,7 @@
   </Package>
 
   <Fragment>
-    <ComponentGroup Id="PayloadComponents" Directory="INSTALLFOLDER">
+    <ComponentGroup Id="PayloadComponents" Directory="ClientFolder">
       <Files Include="$(var.PayloadDir)\**">
         <Exclude Files="$(var.PayloadDir)\455th-SR-ClientRadio.exe" />
       </Files>
@@ -48,14 +53,14 @@
               Name="455th SRS"
               Description="455th SRS Client with OpenFreq receiver DSP"
               Advertise="yes"
-              WorkingDirectory="INSTALLFOLDER" />
+              WorkingDirectory="ClientFolder" />
           <Shortcut
               Id="DesktopShortcut"
               Directory="DesktopFolder"
               Name="455th SRS"
               Description="455th SRS Client with OpenFreq receiver DSP"
               Advertise="yes"
-              WorkingDirectory="INSTALLFOLDER" />
+              WorkingDirectory="ClientFolder" />
         </File>
         <RemoveFolder Id="RemoveProgramMenuDirectory" Directory="ProgramMenuDirectory" On="uninstall" />
       </Component>

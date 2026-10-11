@@ -20,6 +20,7 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models
         public bool IsSecondary {  get; }
         public Modulation Modulation { get; }
         public double ReceivingPower { get; }
+        public float LineOfSightLoss { get; }
         public bool NoAudioEffects { get; }
 
         /// <summary>Transmit frequency in Hz (local DSP context; not a network field).</summary>
@@ -38,8 +39,34 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models
             Modulation = transmission.Modulation;
             ClientGuid = transmission.Guid;
             ReceivingPower = transmission.ReceivingPower;
+            LineOfSightLoss = transmission.LineOfSightLoss;
             NoAudioEffects = transmission.NoAudioEffects;
             Frequency = transmission.Frequency;
+        }
+
+        /// <summary>
+        /// Local-only constructor for preview / tests that already hold processed PCM.
+        /// </summary>
+        public TransmissionSegment(
+            float[] audio,
+            Modulation modulation,
+            double frequencyHz,
+            double receivingPower = 0.05,
+            float lineOfSightLoss = 0f,
+            string clientGuid = "PREVIEW",
+            bool decryptable = true)
+        {
+            Audio = audio ?? Array.Empty<float>();
+            Modulation = modulation;
+            Frequency = frequencyHz;
+            ReceivingPower = receivingPower;
+            LineOfSightLoss = lineOfSightLoss;
+            ClientGuid = clientGuid;
+            OriginalClientGuid = clientGuid;
+            Decryptable = decryptable;
+            HasEncryption = !decryptable;
+            IsSecondary = false;
+            NoAudioEffects = false;
         }
     }
 }

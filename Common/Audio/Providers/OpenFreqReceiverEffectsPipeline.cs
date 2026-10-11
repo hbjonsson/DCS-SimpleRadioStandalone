@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Settings;
@@ -17,19 +18,39 @@ public sealed class OpenFreqReceiverEffectsPipeline
 {
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
+    private static readonly ThreadLocal<Random> ThreadRng =
+        new(() => new Random(Environment.TickCount * Thread.CurrentThread.ManagedThreadId));
+
+    /// <summary>Post-TX drain length so AGC/squelch can fall naturally (~150 ms).</summary>
+    public const int DrainMilliseconds = 150;
+
     private readonly int _radioId;
     private readonly int _sampleRate;
     private RadioReceiverProcessor _processor;
-    private long _lastRefresh;
-    private float _radioEffectRatio = 1.0f;
+
+    // Event-driven RF fading (OpenFreq RadioEffect style).
+    private int _dropoutSamplesLeft;
+    private int _dropoutFadeSamples;
+    private int _dropoutInitialSamples;
+    private int _deepFadeSamplesLeft;
+    private int _deepFadeFadeSamples;
+    private int _deepFadeInitialSamples;
+
+    private readonly Dictionary<string, float> _ppmByGuid = new(StringComparer.Ordinal);
 
     public OpenFreqReceiverEffectsPipeline(int radioId, int sampleRate)
     {
         _radioId = radioId;
         _sampleRate = sampleRate > 0 ? sampleRate : Constants.OUTPUT_SAMPLE_RATE;
         // Default VHF until the first segment provides a frequency.
-        _processor = new RadioReceiverProcessor(_sampleRate, 125000);
+        _processor = new RadioReceiverProcessor(_sampleRate, 125000)
+        {
+            SquelchLevel = 1.0f
+        };
     }
+
+    /// <summary>True if the DSP squelch gate was open for any sample of the last process call.</summary>
+    public bool WasSquelchOpen => _processor.WasSquelchOpen;
 
     /// <summary>
     /// Process AM segments through OpenFreq receiver DSP into <paramref name="audioOut"/>.
@@ -37,19 +58,19 @@ public sealed class OpenFreqReceiverEffectsPipeline
     /// </summary>
     public int ProcessSegments(Span<float> audioOut, IReadOnlyList<TransmissionSegment> segments)
     {
-        RefreshSettings();
-
         if (segments == null || segments.Count == 0)
         {
             audioOut.Clear();
             return 0;
         }
 
+        EnsureSquelchDefault();
+
         // Tune from the first usable segment frequency (Hz → kHz).
-        var freqHz = segments[0].Frequency;
-        if (freqHz > 1)
+        var tunedHz = segments[0].Frequency;
+        if (tunedHz > 1)
         {
-            var freqKhz = (int)Math.Round(freqHz / 1000.0);
+            var freqKhz = (int)Math.Round(tunedHz / 1000.0);
             if (freqKhz > 0)
                 _processor.SetFrequency(freqKhz);
         }
@@ -58,24 +79,22 @@ public sealed class OpenFreqReceiverEffectsPipeline
         for (var i = 0; i < segments.Count; i++)
         {
             var seg = segments[i];
-            // Map SRS distance/LOS loss (0..1 attenuating) into a usable SNR band.
-            // ReceivingPower closer to 0 = stronger; near 1 = very weak.
-            var loss = Math.Clamp(seg.ReceivingPower, 0.0, 0.95);
-            var snrDb = RadioReceiverProcessor.DefaultSnrDb * (float)(1.0 - loss);
+            var samples = (float[])seg.Audio.Clone();
+            var snrDb = EstimateSnrDb(seg);
+            var carrierScale = ApplyEventFading(samples, snrDb);
 
             inputs[i] = new RadioReceiverInput
             {
-                Samples = seg.Audio,
-                RelativePower = RadioReceiverProcessor.SnrDbToRelativePower(Math.Max(snrDb, 3f)),
-                // v1: no PPM / beat simulation — same carrier for all.
-                CarrierOffsetHz = 0f,
+                Samples = samples,
+                // Deep fades scale carrier power so the gate can pop; flutter does not.
+                RelativePower = RadioReceiverProcessor.SnrDbToRelativePower(snrDb) * carrierScale,
+                CarrierOffsetHz = EstimateCarrierOffsetHz(seg, tunedHz),
             };
         }
 
-        var wet = new float[audioOut.Length];
         try
         {
-            _processor.Process(wet.AsSpan(0, audioOut.Length), inputs);
+            _processor.Process(audioOut, inputs);
         }
         catch (Exception e)
         {
@@ -85,34 +104,46 @@ public sealed class OpenFreqReceiverEffectsPipeline
             return 0;
         }
 
-        // Wet/dry mix using the existing RadioEffectsRatio setting.
-        var wetGain = _radioEffectRatio;
-        var dryGain = 1.0f - wetGain;
+        return audioOut.Length;
+    }
 
-        if (dryGain > 0f)
-        {
-            // Build a simple dry mix of the input segments.
-            audioOut.Clear();
-            foreach (var seg in segments)
-            {
-                var src = seg.Audio.AsSpan();
-                var n = Math.Min(src.Length, audioOut.Length);
-                for (var i = 0; i < n; i++)
-                    audioOut[i] += src[i];
-            }
-        }
-        else
-        {
-            audioOut.Clear();
-        }
+    /// <summary>
+    /// Run the receiver with no transmitters so noise/AGC/squelch continue after key-up.
+    /// </summary>
+    public int ProcessDrain(Span<float> audioOut)
+    {
+        if (audioOut.IsEmpty)
+            return 0;
 
-        for (var i = 0; i < audioOut.Length; i++)
-            audioOut[i] = audioOut[i] * dryGain + wet[i] * wetGain;
+        EnsureSquelchDefault();
+
+        try
+        {
+            _processor.Process(audioOut, Array.Empty<RadioReceiverInput>());
+        }
+        catch (Exception e)
+        {
+            Logger.Error(e, "OpenFreq receiver drain failed on radio {RadioId}", _radioId);
+            _processor.ResetAgc();
+            audioOut.Clear();
+            return 0;
+        }
 
         return audioOut.Length;
     }
 
-    public void Reset() => _processor.ResetAgc();
+    public void Reset()
+    {
+        _processor.ResetAgc();
+        _processor.SquelchLevel = 1.0f;
+        _dropoutSamplesLeft = 0;
+        _dropoutFadeSamples = 0;
+        _dropoutInitialSamples = 0;
+        _deepFadeSamplesLeft = 0;
+        _deepFadeFadeSamples = 0;
+        _deepFadeInitialSamples = 0;
+        _ppmByGuid.Clear();
+    }
 
     /// <summary>True when every segment is a normal AM receive that OpenFreq DSP should handle.</summary>
     public static bool CanProcess(IReadOnlyList<TransmissionSegment> segments)
@@ -133,15 +164,191 @@ public sealed class OpenFreqReceiverEffectsPipeline
         return true;
     }
 
-    private void RefreshSettings()
+    public static bool IsOpenFreqAmEnabled()
     {
-        var now = DateTime.Now.Ticks;
-        if (TimeSpan.FromTicks(now - _lastRefresh).TotalSeconds <= 3)
-            return;
+        var raw = GlobalSettingsStore.Instance.ProfileSettingsStore
+            .GetClientSettingString(ProfileSettingsKeys.ReceiverEffectsEngine);
+        return Enum.TryParse(raw, true, out ReceiverEffectsEngine engine)
+               && engine == ReceiverEffectsEngine.OpenFreq;
+    }
 
-        _lastRefresh = now;
-        var profile = GlobalSettingsStore.Instance.ProfileSettingsStore;
-        _radioEffectRatio = Math.Clamp(
-            profile.GetClientSettingFloat(ProfileSettingsKeys.RadioEffectsRatio), 0f, 1f);
+    public static bool ShouldOwnAmPath(Modulation modulation) =>
+        modulation == Modulation.AM && IsOpenFreqAmEnabled();
+
+    public static int DrainSampleCount(int sampleRate) =>
+        Math.Max(1, sampleRate * DrainMilliseconds / 1000);
+
+    private void EnsureSquelchDefault()
+    {
+        // Fixed OpenFreq default. Not mapped to DCS volume / cockpit knobs.
+        _processor.SquelchLevel = 1.0f;
+    }
+
+    /// <summary>
+    /// Steady-state SNR stays high enough that normal SRS packets open the gate
+    /// (RelPower at 10 dB ≈ 3.16 &gt; threshold 2.0). Only event fades / idle drain
+    /// may briefly go under squelch.
+    /// </summary>
+    internal static float EstimateSnrDb(TransmissionSegment seg)
+    {
+        // ReceivingPower: 0 = strong, approaching 1 = weak.
+        // LineOfSightLoss: 0 = clear, approaching 1 = blocked.
+        var distanceLoss = Math.Clamp(seg.ReceivingPower, 0.0, 0.98);
+        var losLoss = Math.Clamp(seg.LineOfSightLoss, 0f, 0.98f);
+        var combined = 1.0 - (1.0 - distanceLoss) * (1.0 - losLoss);
+        // Map to ~10..45 dB so mid-distance never permanently mutes.
+        var snrDb = 10f + (float)((1.0 - combined) * 35.0);
+        return Math.Clamp(snrDb, 10f, 45f);
+    }
+
+    private float EstimateCarrierOffsetHz(TransmissionSegment seg, double tunedHz)
+    {
+        var freqHz = seg.Frequency > 1 ? seg.Frequency : tunedHz;
+        if (freqHz <= 1)
+            return 0f;
+
+        var ppm = GetStablePpm(seg.OriginalClientGuid ?? seg.ClientGuid);
+        var crystalOffset = (float)(freqHz * (ppm * 1e-6));
+        var dialOffset = (float)(freqHz - tunedHz);
+        return crystalOffset + dialOffset;
+    }
+
+    private float GetStablePpm(string guid)
+    {
+        if (string.IsNullOrEmpty(guid))
+            guid = "unknown";
+
+        if (_ppmByGuid.TryGetValue(guid, out var ppm))
+            return ppm;
+
+        // Deterministic local crystal error in roughly +/- 2.5 ppm.
+        unchecked
+        {
+            var hash = (uint)guid.GetHashCode();
+            ppm = ((hash % 5001) / 1000f) - 2.5f;
+        }
+
+        _ppmByGuid[guid] = ppm;
+        return ppm;
+    }
+
+    /// <summary>
+    /// OpenFreq-style Poisson flutter / deep-fade. Returns a carrier scale for
+    /// <see cref="RadioReceiverInput.RelativePower"/> from deep fades only.
+    /// </summary>
+    private float ApplyEventFading(Span<float> samples, float snrDb)
+    {
+        if (samples.IsEmpty)
+            return 1f;
+
+        var rng = ThreadRng.Value!;
+        ScheduleFadingEvents(rng, samples.Length, snrDb);
+
+        var minDeepEnvelope = 1f;
+        for (var i = 0; i < samples.Length; i++)
+        {
+            var inDrop = _dropoutSamplesLeft > 0;
+            var inDeepFade = _deepFadeSamplesLeft > 0;
+            var envelope = 1f;
+
+            if (inDrop)
+                envelope *= ComputeDropoutEnvelope();
+            if (inDeepFade)
+            {
+                var deep = ComputeDeepFadeEnvelope();
+                envelope *= deep;
+                if (deep < minDeepEnvelope)
+                    minDeepEnvelope = deep;
+            }
+
+            samples[i] *= envelope;
+
+            if (inDrop) _dropoutSamplesLeft--;
+            if (inDeepFade) _deepFadeSamplesLeft--;
+        }
+
+        return minDeepEnvelope;
+    }
+
+    private void ScheduleFadingEvents(Random rng, int frames, float snrDb)
+    {
+        var dropoutRate = CalculateDropoutRate(snrDb);
+        var deepFadeRate = CalculateDeepFadeRate(snrDb);
+        var bufferSec = (double)frames / _sampleRate;
+
+        if (_dropoutSamplesLeft <= 0 && dropoutRate > 0.001f)
+        {
+            var prob = 1.0 - Math.Exp(-dropoutRate * bufferSec);
+            if (rng.NextDouble() < prob)
+            {
+                var durMs = Math.Max(20.0, -Math.Log(1.0 - rng.NextDouble()) * 80.0);
+                _dropoutSamplesLeft = (int)(_sampleRate * durMs / 1000.0);
+                _dropoutFadeSamples = (int)(_sampleRate * 8.0 / 1000.0);
+                _dropoutInitialSamples = _dropoutSamplesLeft;
+            }
+        }
+
+        if (_deepFadeSamplesLeft <= 0 && deepFadeRate > 0.001f)
+        {
+            var prob = 1.0 - Math.Exp(-deepFadeRate * bufferSec);
+            if (rng.NextDouble() < prob)
+            {
+                var durMs = Math.Max(400.0, -Math.Log(1.0 - rng.NextDouble()) * 1200.0);
+                _deepFadeSamplesLeft = (int)(_sampleRate * durMs / 1000.0);
+                _deepFadeFadeSamples = (int)(_sampleRate * 50.0 / 1000.0);
+                _deepFadeInitialSamples = _deepFadeSamplesLeft;
+            }
+        }
+    }
+
+    private float ComputeDropoutEnvelope()
+    {
+        var age = _dropoutInitialSamples - _dropoutSamplesLeft;
+        if (age < _dropoutFadeSamples)
+            return 1f - (float)age / _dropoutFadeSamples;
+        if (_dropoutSamplesLeft < _dropoutFadeSamples)
+            return (float)_dropoutSamplesLeft / _dropoutFadeSamples;
+        return 0f;
+    }
+
+    private float ComputeDeepFadeEnvelope()
+    {
+        var age = _deepFadeInitialSamples - _deepFadeSamplesLeft;
+        if (age < _deepFadeFadeSamples)
+            return 1f - (float)age / _deepFadeFadeSamples;
+        if (_deepFadeSamplesLeft < _deepFadeFadeSamples)
+            return (float)_deepFadeSamplesLeft / _deepFadeFadeSamples;
+        return 0f;
+    }
+
+    // Rates mirrored from OpenFreq FastPathAudioSim (AM / longer-wavelength branch).
+    private static float CalculateDropoutRate(float snrDb)
+    {
+        double dropout;
+        if (snrDb > 15.0)
+            dropout = 0.0;
+        else if (snrDb > 5.0)
+            dropout = (15.0 - snrDb) / 10.0 * 0.3;
+        else if (snrDb > 0.0)
+            dropout = 0.3 + (5.0 - snrDb) / 5.0 * 0.4;
+        else
+            dropout = 0.7 + Math.Min(-snrDb / 10.0, 0.5);
+
+        return (float)(dropout * 0.7); // VHF/AM multipath factor
+    }
+
+    private static float CalculateDeepFadeRate(float snrDb)
+    {
+        double deepFade;
+        if (snrDb > 10.0)
+            deepFade = 0.0;
+        else if (snrDb > 5.0)
+            deepFade = (10.0 - snrDb) / 5.0 * 0.05;
+        else if (snrDb > 0.0)
+            deepFade = 0.05 + (5.0 - snrDb) / 5.0 * 0.10;
+        else
+            deepFade = 0.15 + Math.Min(-snrDb / 10.0, 0.15);
+
+        return (float)deepFade;
     }
 }

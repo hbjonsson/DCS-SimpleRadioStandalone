@@ -4,6 +4,7 @@ using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenFreqAudio;
 
 namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Tests.Audio;
 
@@ -92,5 +93,86 @@ public class OpenFreqReceiverEffectsPipelineTests
         var written = pipeline.ProcessSegments(output, Array.Empty<TransmissionSegment>());
         Assert.AreEqual(0, written);
         CollectionAssert.AreEqual(new float[64], output);
+    }
+
+    [TestMethod]
+    public void ProcessDrain_AfterCarrier_ClosesSquelchWithoutCrashing()
+    {
+        var pipeline = new OpenFreqReceiverEffectsPipeline(1, Constants.OUTPUT_SAMPLE_RATE);
+        var frame = Constants.OUTPUT_SEGMENT_FRAMES;
+        var voice = new float[frame];
+        for (var i = 0; i < frame; i++)
+            voice[i] = 0.25f * MathF.Sin(2 * MathF.PI * 900f * i / Constants.OUTPUT_SAMPLE_RATE);
+
+        var output = new float[frame];
+        for (var b = 0; b < 4; b++)
+            pipeline.ProcessSegments(output, new[] { MakeSegment(voice) });
+
+        Assert.IsTrue(pipeline.WasSquelchOpen);
+
+        var openedDuringDrain = false;
+        for (var b = 0; b < 12; b++)
+        {
+            pipeline.ProcessDrain(output);
+            foreach (var s in output)
+                Assert.IsTrue(float.IsFinite(s));
+            if (pipeline.WasSquelchOpen)
+                openedDuringDrain = true;
+        }
+
+        // Tail may briefly stay open, then should settle closed with empty transmitters.
+        Assert.IsFalse(pipeline.WasSquelchOpen);
+        // openedDuringDrain is optional character; don't require it.
+        _ = openedDuringDrain;
+    }
+
+    [TestMethod]
+    public void EstimateSnrDb_SteadyStateStaysAboveSquelchFloor()
+    {
+        var strong = MakeSegment(new float[64], frequencyHz: 125_000_000);
+        // Force weaker geometry via reflection of private path: construct segment with high loss.
+        var weak = new TransmissionSegment(
+            new float[64],
+            Modulation.AM,
+            frequencyHz: 125_000_000,
+            receivingPower: 0.9,
+            lineOfSightLoss: 0.5f,
+            clientGuid: "CCCCCCCCCCCCCCCCCCCCCC");
+
+        var strongSnr = OpenFreqReceiverEffectsPipeline.EstimateSnrDb(strong);
+        var weakSnr = OpenFreqReceiverEffectsPipeline.EstimateSnrDb(weak);
+
+        Assert.IsTrue(strongSnr >= 10f);
+        Assert.IsTrue(weakSnr >= 10f, "Steady-state must not permanently mute mid-distance RX");
+        Assert.IsTrue(RadioReceiverProcessor.SnrDbToRelativePower(weakSnr) >= 2.0f);
+    }
+
+    [TestMethod]
+    public void ProcessSegments_MultiTx_ProducesFiniteCollisionMix()
+    {
+        var pipeline = new OpenFreqReceiverEffectsPipeline(3, Constants.OUTPUT_SAMPLE_RATE);
+        var frame = Constants.OUTPUT_SEGMENT_FRAMES;
+        var a = new float[frame];
+        var b = new float[frame];
+        for (var i = 0; i < frame; i++)
+        {
+            a[i] = 0.18f * MathF.Sin(2 * MathF.PI * 700f * i / Constants.OUTPUT_SAMPLE_RATE);
+            b[i] = 0.18f * MathF.Sin(2 * MathF.PI * 900f * i / Constants.OUTPUT_SAMPLE_RATE);
+        }
+
+        var segA = MakeSegment(a, frequencyHz: 251_000_000);
+        var segB = new TransmissionSegment(
+            b,
+            Modulation.AM,
+            frequencyHz: 251_000_050,
+            receivingPower: 0.35,
+            lineOfSightLoss: 0.1f,
+            clientGuid: "BBBBBBBBBBBBBBBBBBBBBB");
+
+        var output = new float[frame];
+        pipeline.ProcessSegments(output, new[] { segA, segB });
+        Assert.IsTrue(Array.Exists(output, s => MathF.Abs(s) > 0.005f));
+        foreach (var s in output)
+            Assert.IsTrue(float.IsFinite(s));
     }
 }
