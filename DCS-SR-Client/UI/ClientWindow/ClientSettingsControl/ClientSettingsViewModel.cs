@@ -999,8 +999,9 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
     }
 
     /// <summary>
-    /// When true, AM receive audio uses OpenFreq's local receiver DSP.
-    /// Default false preserves stock SRS effects. Wire protocol is unchanged.
+    /// When true, eligible AM receive uses OpenFreq's local receiver DSP.
+    /// Profile default is OpenFreq. FM / MIDS / intercom / HaveQuick stay on SRS paths.
+    /// Wire protocol is unchanged.
     /// </summary>
     public bool OpenFreqReceiveEffects
     {
@@ -1285,6 +1286,8 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         NotifyPropertyChanged(nameof(RadioMIDSToggle));
         NotifyPropertyChanged(nameof(RadioSoundEffectsRatio));
         NotifyPropertyChanged(nameof(RadioSoundEffectsClipping));
+        NotifyPropertyChanged(nameof(PerRadioModelEffects));
+        NotifyPropertyChanged(nameof(OpenFreqReceiveEffects));
         NotifyPropertyChanged(nameof(NATORadioToneToggle));
         NotifyPropertyChanged(nameof(NATORadioToneVolume));
         NotifyPropertyChanged(nameof(HQEffectToggle));

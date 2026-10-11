@@ -145,7 +145,12 @@ public sealed class OpenFreqReceiverEffectsPipeline
         _ppmByGuid.Clear();
     }
 
-    /// <summary>True when every segment is a normal AM receive that OpenFreq DSP should handle.</summary>
+    /// <summary>
+    /// True when every segment has OpenFreq-AM segment shape (clear AM, effects on).
+    /// Does not read the engine setting — callers also check <see cref="IsOpenFreqEnabled"/>.
+    /// Prefer partitioning with <see cref="IsEligibleOpenFreqAm(TransmissionSegment)"/> so mixed
+    /// batches do not force clear AM onto the SRS mixer.
+    /// </summary>
     public static bool CanProcess(IReadOnlyList<TransmissionSegment> segments)
     {
         if (segments == null || segments.Count == 0)
@@ -153,18 +158,15 @@ public sealed class OpenFreqReceiverEffectsPipeline
 
         foreach (var seg in segments)
         {
-            if (seg.NoAudioEffects)
-                return false;
-            if (seg.Modulation != Modulation.AM)
-                return false;
-            if (!seg.Decryptable)
+            if (!HasOpenFreqAmSegmentShape(seg.Modulation, seg.Decryptable, seg.NoAudioEffects))
                 return false;
         }
 
         return true;
     }
 
-    public static bool IsOpenFreqAmEnabled()
+    /// <summary>True when the client profile selects the OpenFreq receive engine.</summary>
+    public static bool IsOpenFreqEnabled()
     {
         var raw = GlobalSettingsStore.Instance.ProfileSettingsStore
             .GetClientSettingString(ProfileSettingsKeys.ReceiverEffectsEngine);
@@ -172,8 +174,35 @@ public sealed class OpenFreqReceiverEffectsPipeline
                && engine == ReceiverEffectsEngine.OpenFreq;
     }
 
-    public static bool ShouldOwnAmPath(Modulation modulation) =>
-        modulation == Modulation.AM && IsOpenFreqAmEnabled();
+    /// <summary>Alias for <see cref="IsOpenFreqEnabled"/> (historical AM-focused name).</summary>
+    public static bool IsOpenFreqAmEnabled() => IsOpenFreqEnabled();
+
+    /// <summary>
+    /// Segment shape for OpenFreq AM DSP: clear AM, decryptable, effects allowed.
+    /// FM / MIDS / intercom / failed decrypt / NoAudioEffects never match.
+    /// </summary>
+    public static bool HasOpenFreqAmSegmentShape(Modulation modulation, bool decryptable, bool noAudioEffects)
+        => modulation == Modulation.AM
+           && decryptable
+           && !noAudioEffects;
+
+    /// <summary>
+    /// Fully eligible OpenFreq AM path: engine on and segment shape matches.
+    /// </summary>
+    public static bool IsEligibleOpenFreqAm(Modulation modulation, bool decryptable, bool noAudioEffects)
+        => IsOpenFreqEnabled()
+           && HasOpenFreqAmSegmentShape(modulation, decryptable, noAudioEffects);
+
+    public static bool IsEligibleOpenFreqAm(TransmissionSegment segment)
+        => segment != null
+           && IsEligibleOpenFreqAm(segment.Modulation, segment.Decryptable, segment.NoAudioEffects);
+
+    /// <summary>
+    /// Per-source gate used before SRS TX/loss processing. Requires full eligibility
+    /// (not modulation alone) so failed-decrypt / NoAudioEffects AM stay on the SRS path.
+    /// </summary>
+    public static bool ShouldOwnAmPath(Modulation modulation, bool decryptable = true, bool noAudioEffects = false)
+        => IsEligibleOpenFreqAm(modulation, decryptable, noAudioEffects);
 
     public static int DrainSampleCount(int sampleRate) =>
         Math.Max(1, sampleRate * DrainMilliseconds / 1000);

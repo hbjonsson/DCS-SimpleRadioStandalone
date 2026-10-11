@@ -1161,28 +1161,38 @@
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
-                                   Content="{x:Static p:Resources.RadioSoundEffects}" />
+                                   Content="{x:Static p:Resources.RadioSoundEffects}"
+                                   ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                             <clientSettingsControl:BackgroundEffectVolumeControl
                                     Grid.Row="8"
                                     Grid.Column="1"
                                     MaximumPercentage="100"
-                                    VolumeValue="{Binding RadioSoundEffectsRatio, Mode=TwoWay}" />
+                                    VolumeValue="{Binding RadioSoundEffectsRatio, Mode=TwoWay}"
+                                    ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                             <Label Grid.Row="9"
                                Grid.Column="0"
                                HorizontalContentAlignment="Center"
                                VerticalContentAlignment="Center"
-                               Content="{x:Static p:Resources.PerRadioModelEffects}" />
+                               Content="{x:Static p:Resources.PerRadioModelEffects}"
+                               ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                             <StackPanel Grid.Row="9" Grid.Column="1">
                                 <clientSettingsControl:SettingsToggleControl
-                                    ToggleValue="{Binding PerRadioModelEffects, Mode=TwoWay}" />
+                                    ToggleValue="{Binding PerRadioModelEffects, Mode=TwoWay}"
+                                    ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
                                 <Label HorizontalContentAlignment="Center"
                                        Content="{x:Static p:Resources.OpenFreqReceiveEffects}"
                                        Margin="0,8,0,0" />
                                 <clientSettingsControl:SettingsToggleControl
                                     ToggleValue="{Binding OpenFreqReceiveEffects, Mode=TwoWay}" />
+                                <TextBlock Text="{x:Static p:Resources.OpenFreqReceiveEffectsHelp}"
+                                           TextWrapping="Wrap"
+                                           TextAlignment="Center"
+                                           Opacity="0.7"
+                                           FontSize="11"
+                                           Margin="4,4,4,0" />
                             </StackPanel>
 
 
@@ -1190,21 +1200,25 @@
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
-                                   Content="{x:Static p:Resources.RadioSoundEffectsClipping}" />
+                                   Content="{x:Static p:Resources.RadioSoundEffectsClipping}"
+                                   ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                             <clientSettingsControl:SettingsToggleControl
                                 Grid.Row="10"
                                 Grid.Column="1"
-                                ToggleValue="{Binding RadioSoundEffectsClipping, Mode=TwoWay}" />
+                                ToggleValue="{Binding RadioSoundEffectsClipping, Mode=TwoWay}"
+                                ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
                             
                             <Label Grid.Row="11"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
-                                   Content="{x:Static p:Resources.NATORadioTone}" />
+                                   Content="{x:Static p:Resources.NATORadioTone}"
+                                   ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
                             
                             <Border Grid.Row="11"
-                                    Grid.Column="1" BorderBrush="CornflowerBlue" BorderThickness="1">
+                                    Grid.Column="1" BorderBrush="CornflowerBlue" BorderThickness="1"
+                                    ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}">
 
                             <StackPanel Grid.Row="12"
                                         Grid.Column="1" Margin="10">
@@ -1221,10 +1235,12 @@
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
-                                   Content="{x:Static p:Resources.HQEffect}" />
+                                   Content="{x:Static p:Resources.HQEffect}"
+                                   ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                             <Border Grid.Row="13"
-                                Grid.Column="1" BorderBrush="CornflowerBlue" BorderThickness="1">
+                                Grid.Column="1" BorderBrush="CornflowerBlue" BorderThickness="1"
+                                ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}">
                                 <StackPanel Margin="10">
                                     <clientSettingsControl:SettingsToggleControl
 
@@ -1239,36 +1255,42 @@
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
-                                   Content="{x:Static p:Resources.BackgroundRadioNoise}" />
+                                   Content="{x:Static p:Resources.BackgroundRadioNoise}"
+                                   ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                             <clientSettingsControl:SettingsToggleControl
                                 Grid.Row="14"
                                 Grid.Column="1"
-                                ToggleValue="{Binding BackgroundRadioNoiseToggle, Mode=TwoWay}" />
+                                ToggleValue="{Binding BackgroundRadioNoiseToggle, Mode=TwoWay}"
+                                ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                             <Label Grid.Row="15"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
-                                   Content="{x:Static p:Resources.NoiseGainDB}" />
+                                   Content="{x:Static p:Resources.NoiseGainDB}"
+                                   ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                             <clientSettingsControl:GainDBControl
                                 Grid.Row="15"
                                 Grid.Column="1"
                                 IsEnabled="{Binding BackgroundRadioNoiseToggle}"
-                                GainDBValue="{Binding NoiseGainDB,Mode=TwoWay}" />
+                                GainDBValue="{Binding NoiseGainDB,Mode=TwoWay}"
+                                ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                             <Label Grid.Row="16"
                                Grid.Column="0"
                                HorizontalContentAlignment="Center"
                                VerticalContentAlignment="Center"
-                               Content="{x:Static p:Resources.HFNoiseGainDB}" />
+                               Content="{x:Static p:Resources.HFNoiseGainDB}"
+                               ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                         <clientSettingsControl:GainDBControl
                             Grid.Row="16"
                             Grid.Column="1"
                             IsEnabled="{Binding BackgroundRadioNoiseToggle}"
-                            GainDBValue="{Binding HFNoiseGainDB,Mode=TwoWay}" />
+                            GainDBValue="{Binding HFNoiseGainDB,Mode=TwoWay}"
+                            ToolTip="{x:Static p:Resources.OpenFreqBypassedAmTooltip}" />
 
                             <Label Grid.Row="17"
                                    Grid.Column="0"

@@ -1267,6 +1267,12 @@ Requires Tx or Rx Effects On</value>
   <data name="OpenFreqReceiveEffects" xml:space="preserve">
     <value>Use OpenFreq Receive Effects (AM, local only)</value>
   </data>
+  <data name="OpenFreqReceiveEffectsHelp" xml:space="preserve">
+    <value>OpenFreq replaces AM receive character only. Controls below still apply to FM, SINCGARS, HaveQuick, MIDS, and intercom.</value>
+  </data>
+  <data name="OpenFreqBypassedAmTooltip" xml:space="preserve">
+    <value>Applies to SRS receive paths (FM, SINCGARS, HaveQuick, MIDS, intercom). Eligible OpenFreq AM bypasses this control.</value>
+  </data>
   <data name="SrvEAMRadioPresetEnabled" xml:space="preserve">
     <value>Server EAM Radio Preset Enabled</value>
   </data>

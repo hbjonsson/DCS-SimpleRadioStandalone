@@ -87,14 +87,19 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers
             drySpan.Clear();
 
             TransmissionSegment capturedFMSegment = null;
+            var capturedLoss = float.MaxValue;
             foreach (var segment in segments)
             {
-                if (irlRadioRXInterference && !segment.NoAudioEffects && segment.Modulation == Modulation.FM)
+                if (irlRadioRXInterference
+                    && !segment.NoAudioEffects
+                    && IsFmCaptureModulation(segment.Modulation))
                 {
-                    // FM Capture effect: sort out the segments and try to see if we latched
-                    if (capturedFMSegment == null || capturedFMSegment.ReceivingPower < segment.ReceivingPower)
+                    // ReceivingPower / LineOfSightLoss are loss (0 = strong). Capture the strongest.
+                    var loss = CombinedReceiveLoss(segment);
+                    if (capturedFMSegment == null || loss < capturedLoss)
                     {
                         capturedFMSegment = segment;
+                        capturedLoss = loss;
                     }
                 }
                 else
@@ -107,7 +112,6 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers
 
             if (capturedFMSegment != null)
             {
-                // Use the last one (highest power).
                 Mix(drySpan, capturedFMSegment.Audio.AsSpan());
             }
 
@@ -158,6 +162,21 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers
             }
             
             return samplesRead;
+        }
+
+        /// <summary>FM capture applies to FM and SINCGARS; not HAVEQUICK (UHF AM hopping).</summary>
+        internal static bool IsFmCaptureModulation(Modulation modulation)
+            => modulation == Modulation.FM || modulation == Modulation.SINCGARS;
+
+        /// <summary>
+        /// Combined distance/LOS loss in 0..1 (0 = strongest). ReceivingPower and LineOfSightLoss
+        /// are both loss fractions, matching OpenFreq EstimateSnrDb semantics.
+        /// </summary>
+        internal static float CombinedReceiveLoss(TransmissionSegment segment)
+        {
+            var distanceLoss = Math.Clamp((float)segment.ReceivingPower, 0f, 0.98f);
+            var losLoss = Math.Clamp(segment.LineOfSightLoss, 0f, 0.98f);
+            return 1f - (1f - distanceLoss) * (1f - losLoss);
         }
 
         internal void Mix(Span<float> target, ReadOnlySpan<float> source)

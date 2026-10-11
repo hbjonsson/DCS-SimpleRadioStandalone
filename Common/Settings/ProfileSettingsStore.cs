@@ -75,7 +75,7 @@ public enum ProfileSettingsKeys
     InstructorMode, // allows tuning to Intercoms, only for receiving - cant send
 
     /// <summary>
-    /// Local receive effects engine: "SRS" (default) or "OpenFreq".
+    /// Local receive effects engine: "OpenFreq" (default; AM only) or "SRS".
     /// Affects playback only — wire protocol unchanged.
     /// </summary>
     ReceiverEffectsEngine,

@@ -53,6 +53,18 @@ public class OpenFreqReceiverEffectsPipelineTests
         }));
         Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
         {
+            MakeSegment(new float[100], Modulation.SINCGARS)
+        }));
+        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
+        {
+            MakeSegment(new float[100], Modulation.HAVEQUICK)
+        }));
+        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
+        {
+            MakeSegment(new float[100], Modulation.MIDS)
+        }));
+        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
+        {
             MakeSegment(new float[100], decryptable: false)
         }));
         Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]

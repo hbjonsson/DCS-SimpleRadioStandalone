@@ -194,7 +194,8 @@ public class ClientAudioProvider : AudioProvider
             // OpenFreq owns AM tone: use native-like muffling wetness when engines are on,
             // instead of DCS ambient.vol defaults around 0.15.
             float proceduralVolume;
-            if (OpenFreqReceiverEffectsPipeline.ShouldOwnAmPath(modulation) && ambient.vol > 0.01f)
+            if (OpenFreqReceiverEffectsPipeline.ShouldOwnAmPath(modulation, decryptable: true, noAudioEffects: false)
+                && ambient.vol > 0.01f)
                 proceduralVolume = Math.Clamp(ambientCockpitEffectVolume, 0f, 1f);
             else
                 proceduralVolume = Math.Clamp(ambient.vol * ambientCockpitEffectVolume, 0f, 1f);
@@ -356,7 +357,8 @@ public class ClientAudioProvider : AudioProvider
         var segment = new TransmissionSegment(transmission);
 
         var segmentAudio = segment.Audio.AsSpan();
-        var openFreqOwnsAm = OpenFreqReceiverEffectsPipeline.ShouldOwnAmPath(transmission.Modulation);
+        var openFreqOwnsAm = OpenFreqReceiverEffectsPipeline.ShouldOwnAmPath(
+            transmission.Modulation, transmission.Decryptable, transmission.NoAudioEffects);
 
         if (transmission.Decryptable)
         {
@@ -375,7 +377,8 @@ public class ClientAudioProvider : AudioProvider
             AddEncryptionFailureEffect(segmentAudio);
         }
 
-        // OpenFreq owns AM radio character; skip SRS TX radio-model FX on that path.
+        // OpenFreq owns eligible AM radio character; skip SRS TX radio-model FX on that path.
+        // Failed decrypt / NoAudioEffects / non-AM always run the SRS TX pipeline (volume included).
         if (!openFreqOwnsAm)
             pipeline.Process(transmission, segmentAudio);
 

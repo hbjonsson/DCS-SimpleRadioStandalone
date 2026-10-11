@@ -1,5 +1,6 @@
 ﻿using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models.Dto;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Recording;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.NetCoreServer;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Network.Singletons;
@@ -33,8 +34,13 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers
         public void Process(DeJitteredTransmission transmission, Span<float> audioOut)
         {
             RefreshSettings();
+
+            // NoAudioEffects: skip radio character FX but still apply the radio volume knob.
             if (transmission.NoAudioEffects)
+            {
+                ApplyVolumeOnly(audioOut, transmission.Volume);
                 return;
+            }
 
             // Copy to regular array for compatibility with ISampleProvider.
             var floatPool = ArrayPool<float>.Shared;
@@ -96,6 +102,15 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers
 
             floatPool.Return(drySourceBuffer);
             floatPool.Return(wetSourceBuffer);
+        }
+
+        /// <summary>
+        /// Apply linear radio volume with no character FX (global-freq / NoAudioEffects path).
+        /// Unity gain is a no-op so full volume stays bit-identical.
+        /// </summary>
+        private static void ApplyVolumeOnly(Span<float> audioOut, float volume)
+        {
+            AudioManipulationHelper.ApplyLinearGain(audioOut, volume);
         }
 
         private static bool IsIntercomLike(Modulation modulation)

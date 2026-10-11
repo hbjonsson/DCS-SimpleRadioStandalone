@@ -36,12 +36,16 @@ public class RadioMixingProvider : ISampleProvider
     private bool IsReceiving { get; set; } = false;
 
     private float[] mixBuffer;
+    private float[] _openFreqScratch;
+    private float[] _srsScratch;
     private int availableInBuffer = 0;
     private long _lastEngineRefresh;
     private ReceiverEffectsEngine _receiverEffectsEngine = ReceiverEffectsEngine.SRS;
     private int _openFreqDrainSamplesRemaining;
     /// <summary>Last OpenFreq AM radio volume; reused for post-TX drain so the tail follows the knob.</summary>
     private float _openFreqRadioVolume = 1f;
+    /// <summary>Receiving-radio volume used to scale RX/TX tones for this radio.</summary>
+    private float _radioToneVolume = 1f;
 
     //  private readonly WaveFileWriter waveWriter;
     public RadioMixingProvider(WaveFormat waveFormat, int radioId)
@@ -147,8 +151,9 @@ public class RadioMixingProvider : ISampleProvider
             }
 
             RefreshReceiverEngine();
-            var openFreqOwnsAm = false;
+            var openFreqAmOnly = false;
             var openFreqRxActive = false;
+            var hasFallback = false;
 
             // Queue new audio (if any), or continue a short OpenFreq post-TX drain.
             if (hasIncomingAudio)
@@ -165,30 +170,77 @@ public class RadioMixingProvider : ISampleProvider
                     var targetSpan = mixBuffer.AsSpan(availableInBuffer, longestSegmentLength);
                     targetSpan.Clear();
 
-                    if (_receiverEffectsEngine == ReceiverEffectsEngine.OpenFreq
-                        && OpenFreqReceiverEffectsPipeline.CanProcess(segments))
+                    // Cache receiving-radio volume for tone scaling (same knob for every segment).
+                    _radioToneVolume = segments[0].Volume;
+
+                    List<TransmissionSegment> openFreqAm = null;
+                    List<TransmissionSegment> fallback = null;
+                    if (_receiverEffectsEngine == ReceiverEffectsEngine.OpenFreq)
                     {
-                        openFreqOwnsAm = true;
-                        lastModulation = Modulation.AM;
-                        openFreqPipeline.ProcessSegments(targetSpan, segments);
+                        openFreqAm = new List<TransmissionSegment>(segments.Count);
+                        fallback = new List<TransmissionSegment>(segments.Count);
+                        foreach (var seg in segments)
+                        {
+                            if (OpenFreqReceiverEffectsPipeline.IsEligibleOpenFreqAm(seg))
+                                openFreqAm.Add(seg);
+                            else
+                                fallback.Add(seg);
+                        }
+                    }
+                    else
+                    {
+                        fallback = segments;
+                    }
+
+                    hasFallback = fallback != null && fallback.Count > 0;
+                    var hasOpenFreqAm = openFreqAm != null && openFreqAm.Count > 0;
+                    openFreqAmOnly = hasOpenFreqAm && !hasFallback;
+
+                    if (hasOpenFreqAm)
+                    {
+                        EnsureScratch(ref _openFreqScratch, longestSegmentLength);
+                        var amSpan = _openFreqScratch.AsSpan(0, longestSegmentLength);
+                        amSpan.Clear();
+                        openFreqPipeline.ProcessSegments(amSpan, openFreqAm);
                         openFreqRxActive = openFreqPipeline.WasSquelchOpen;
-                        _openFreqDrainSamplesRemaining =
-                            OpenFreqReceiverEffectsPipeline.DrainSampleCount(WaveFormat.SampleRate);
-                        // Same knob for every segment on this radio; apply after AGC + clip.
-                        _openFreqRadioVolume = segments[0].Volume;
+                        _openFreqRadioVolume = openFreqAm[0].Volume;
+                        // Post-AGC, post-clip character: scale then mix into target.
+                        AudioManipulationHelper.ClipArray(amSpan);
+                        AudioManipulationHelper.ApplyLinearGain(amSpan, _openFreqRadioVolume);
+                        MixInto(targetSpan, amSpan);
+
+                        // Drain only when this tick is OpenFreq-AM-only (no fallback bleeding in).
+                        if (openFreqAmOnly)
+                        {
+                            _openFreqDrainSamplesRemaining =
+                                OpenFreqReceiverEffectsPipeline.DrainSampleCount(WaveFormat.SampleRate);
+                            lastModulation = Modulation.AM;
+                        }
+                        else
+                        {
+                            _openFreqDrainSamplesRemaining = 0;
+                        }
                     }
                     else
                     {
                         _openFreqDrainSamplesRemaining = 0;
-                        // #TODO: pass receiving radio model name.
-                        pipeline.ProcessSegments(targetSpan, segments, null);
                     }
 
-                    //now clip all mixing
+                    if (hasFallback)
+                    {
+                        EnsureScratch(ref _srsScratch, longestSegmentLength);
+                        var srsSpan = _srsScratch.AsSpan(0, longestSegmentLength);
+                        srsSpan.Clear();
+                        // #TODO: pass receiving radio model name.
+                        pipeline.ProcessSegments(srsSpan, fallback, null);
+                        MixInto(targetSpan, srsSpan);
+                        lastModulation = fallback[fallback.Count - 1].Modulation;
+                        // Fallback cancels AM drain so squelch tails do not bleed across modes.
+                        _openFreqDrainSamplesRemaining = 0;
+                    }
+
+                    // Final clip after combining buckets.
                     AudioManipulationHelper.ClipArray(targetSpan);
-                    // OpenFreq skips the SRS TX pipeline (where volume used to land); scale after clip.
-                    if (openFreqOwnsAm)
-                        AudioManipulationHelper.ApplyLinearGain(targetSpan, _openFreqRadioVolume);
                     availableInBuffer += targetSpan.Length;
 
                     // Drain newly queued audio.
@@ -204,7 +256,7 @@ public class RadioMixingProvider : ISampleProvider
             {
                 try
                 {
-                    openFreqOwnsAm = true;
+                    openFreqAmOnly = true;
                     var drainFrames = Math.Min(
                         monoBufferLength - monoOffset,
                         _openFreqDrainSamplesRemaining);
@@ -230,6 +282,7 @@ public class RadioMixingProvider : ISampleProvider
                         _openFreqDrainSamplesRemaining - targetSpan.Length);
                     openFreqRxActive = openFreqPipeline.WasSquelchOpen
                                        || _openFreqDrainSamplesRemaining > 0;
+                    lastModulation = Modulation.AM;
 
                     monoOffset += ReadMixBuffer(monoBuffer, monoOffset, monoBufferLength - monoOffset);
                 }
@@ -240,15 +293,17 @@ public class RadioMixingProvider : ISampleProvider
                 }
             }
 
-            var rxActive = openFreqOwnsAm
+            // OpenFreq-AM-only: activity from squelch/drain. Otherwise SRS-style presence.
+            var rxActive = openFreqAmOnly
                 ? openFreqRxActive
-                : hasIncomingAudio || availableInBuffer > 0;
+                : hasIncomingAudio || availableInBuffer > 0 || openFreqRxActive;
 
-            // #FIXME: Should copy into mixBuffer, and use that throughout as our primary mixdown here.
+            // Suppress generic RADIO_TRANS clicks only when OpenFreq AM alone owns the event.
+            // KY-58 is evaluated before that suppress and remains audible (volume-scaled).
             monoOffset += HandleStartEndTones(
                 rxActive,
                 ky58Tone,
-                openFreqOwnsAm,
+                openFreqAmOnly,
                 monoBuffer,
                 monoOffset,
                 monoBufferLength - monoOffset);
@@ -323,7 +378,42 @@ public class RadioMixingProvider : ISampleProvider
         {
             openFreqPipeline.Reset();
             _openFreqRadioVolume = 1f;
+            _radioToneVolume = 1f;
         }
+    }
+
+    private static void EnsureScratch(ref float[] scratch, int length)
+    {
+        if (scratch == null || scratch.Length < length)
+            scratch = new float[length];
+    }
+
+    private static void MixInto(Span<float> target, ReadOnlySpan<float> source)
+    {
+        var n = Math.Min(target.Length, source.Length);
+        for (var i = 0; i < n; i++)
+            target[i] += source[i];
+    }
+
+    private void WriteEffectScaled(float[] samples, float volume)
+    {
+        if (samples == null || samples.Length == 0)
+            return;
+
+        if (volume == 1f)
+        {
+            effectsBuffer.Write(samples, 0, samples.Length);
+            return;
+        }
+
+        if (volume == 0f)
+            return;
+
+        // Scale into a temporary copy so we do not mutate the cached effect asset.
+        var scaled = new float[samples.Length];
+        Array.Copy(samples, scaled, samples.Length);
+        AudioManipulationHelper.ApplyLinearGain(scaled, volume);
+        effectsBuffer.Write(scaled, 0, scaled.Length);
     }
 
     private int HandleStartEndTones(
@@ -389,17 +479,18 @@ public class RadioMixingProvider : ISampleProvider
         if (!profileSettings.GetClientSettingBool(ProfileSettingsKeys.RadioRxEffects_End)) return;
 
         var midsTone = profileSettings.GetClientSettingBool(ProfileSettingsKeys.MIDSRadioEffect);
+        var vol = _radioToneVolume;
 
         if (radioId == 0)
         {
             var effect = _cachedAudioEffectsProvider.SelectedIntercomTransmissionEndEffect;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, vol);
         }
         else if (modulation == Modulation.MIDS && midsTone)
         {
             //end receive tone for MIDS
             var effect = _cachedAudioEffectsProvider.MIDSEndTone;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, vol);
         }
         else if (suppressGenericRadioClicks)
         {
@@ -408,7 +499,7 @@ public class RadioMixingProvider : ISampleProvider
         else
         {
             var effect = _cachedAudioEffectsProvider.SelectedRadioTransmissionEndEffect;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, vol);
         }
     }
 
@@ -423,6 +514,7 @@ public class RadioMixingProvider : ISampleProvider
         if (!profileSettings.GetClientSettingBool(ProfileSettingsKeys.RadioRxEffects_Start)) return;
 
         var midsTone = profileSettings.GetClientSettingBool(ProfileSettingsKeys.MIDSRadioEffect);
+        var vol = _radioToneVolume;
 
         if (modulation == Modulation.MIDS && midsTone)
             //no tone for MIDS
@@ -432,14 +524,14 @@ public class RadioMixingProvider : ISampleProvider
         if (radioId == 0)
         {
             var effect = _cachedAudioEffectsProvider.SelectedIntercomTransmissionStartEffect;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, vol);
         }
         else if (encrypted &&
                  profileSettings.GetClientSettingBool(ProfileSettingsKeys
                      .RadioEncryptionEffects))
         {
             var effect = _cachedAudioEffectsProvider.KY58EncryptionEndTone;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, vol);
         }
         else if (suppressGenericRadioClicks)
         {
@@ -448,13 +540,14 @@ public class RadioMixingProvider : ISampleProvider
         else
         {
             var effect = _cachedAudioEffectsProvider.SelectedRadioTransmissionStartEffect;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, vol);
         }
     }
 
     public void PlaySoundEffectStartTransmit(bool encrypted, float volume, Modulation modulation)
     {
         lastModulation = modulation;
+        _radioToneVolume = volume;
 
         if (!profileSettings.GetClientSettingBool(ProfileSettingsKeys.RadioTxEffects_Start)) return;
 
@@ -463,29 +556,30 @@ public class RadioMixingProvider : ISampleProvider
         if (radioId == 0)
         {
             var effect = _cachedAudioEffectsProvider.SelectedIntercomTransmissionStartEffect;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, volume);
         }
         else if (encrypted && profileSettings.GetClientSettingBool(ProfileSettingsKeys.RadioEncryptionEffects))
         {
             var effect = _cachedAudioEffectsProvider.KY58EncryptionTransmitTone;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, volume);
         }
         else if (modulation == Modulation.MIDS && midsTone)
         {
             var effect = _cachedAudioEffectsProvider.MIDSTransmitTone;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, volume);
         }
         else
         {
             var effect = _cachedAudioEffectsProvider.SelectedRadioTransmissionStartEffect;
 
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, volume);
         }
     }
 
     public void PlaySoundEffectEndTransmit(float volume, Modulation modulation)
     {
         lastModulation = modulation;
+        _radioToneVolume = volume;
 
         if (!profileSettings.GetClientSettingBool(ProfileSettingsKeys.RadioTxEffects_End)) return;
 
@@ -494,17 +588,17 @@ public class RadioMixingProvider : ISampleProvider
         if (radioId == 0)
         {
             var effect = _cachedAudioEffectsProvider.SelectedIntercomTransmissionEndEffect;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, volume);
         }
         else if (modulation == Modulation.MIDS && midsTone)
         {
             var effect = _cachedAudioEffectsProvider.MIDSEndTone;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, volume);
         }
         else
         {
             var effect = _cachedAudioEffectsProvider.SelectedRadioTransmissionEndEffect;
-            if (effect.Loaded) effectsBuffer.Write(effect.AudioEffectFloat, 0, effect.AudioEffectFloat.Length);
+            if (effect.Loaded) WriteEffectScaled(effect.AudioEffectFloat, volume);
         }
     }
 
