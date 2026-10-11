@@ -24,10 +24,8 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Recording
         {
             var now = DateTime.UtcNow;
 
-            // streams are stored in Recordings directory, named "<date>-<time><tag>.mp3"
-            var sanitisedDate = string.Join("-", now.ToLocalTime().ToShortDateString().Split(Path.GetInvalidFileNameChars()));
-            var sanitisedTime = string.Join("-", now.ToLocalTime().ToLongTimeString().Split(Path.GetInvalidFileNameChars()));
-            var filePathBase = $"Recordings\\{sanitisedDate}-{sanitisedTime}";
+            // streams are stored in Recordings directory, named "SRS_yyyyMMddTHHmmssZ<tag>.opus"
+            var filePathBase = BuildRecordingFilePathBase();
 
             var encodedBy = "SRS " + UpdaterChecker.VERSION;
             var trackTotal = Streams.Count.ToString();

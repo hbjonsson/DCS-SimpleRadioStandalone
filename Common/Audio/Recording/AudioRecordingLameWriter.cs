@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Buffers;
 using System.Collections.Generic;
-using System.IO;
 using System.Runtime.InteropServices;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.NAudioLame;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Settings;
@@ -42,10 +40,8 @@ internal class AudioRecordingLameWriter : AudioRecordingWriterBase
 
     public override void Start()
     {
-        // streams are stored in Recordings directory, named "<date>-<time><tag>.mp3"
-        var sanitisedDate = string.Join("-", DateTime.Now.ToShortDateString().Split(Path.GetInvalidFileNameChars()));
-        var sanitisedTime = string.Join("-", DateTime.Now.ToLongTimeString().Split(Path.GetInvalidFileNameChars()));
-        var filePathBase = $"Recordings\\{sanitisedDate}-{sanitisedTime}";
+        // streams are stored in Recordings directory, named "SRS_yyyyMMddTHHmmssZ<tag>.mp3"
+        var filePathBase = BuildRecordingFilePathBase();
 
         var lamePreset = (LAMEPreset)Enum.Parse(typeof(LAMEPreset),
             GlobalSettingsStore.Instance.GetClientSetting(GlobalSettingsKeys.RecordingQuality).RawValue);

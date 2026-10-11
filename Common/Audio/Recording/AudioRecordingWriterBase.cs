@@ -3,6 +3,7 @@ using NLog;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 
 namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Recording
@@ -28,11 +29,20 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Recording
             _sampleRate = sampleRate;
             _maxSamples = maxSamples;
 
-            if (!Directory.Exists("Recordings"))
-            {
-                _logger.Info("Recordings directory missing, creating directory");
-                Directory.CreateDirectory("Recordings");
-            }
+            var recordingsDirectory = AudioRecordingManager.RecordingsDirectory;
+            _logger.Info($"Ensuring recordings directory exists: {recordingsDirectory}");
+            Directory.CreateDirectory(recordingsDirectory);
+        }
+
+        /// <summary>
+        /// Builds a Tacview-compatible UTC filename base:
+        /// <c>SRS_yyyyMMddTHHmmssZ</c> under <see cref="AudioRecordingManager.RecordingsDirectory"/>.
+        /// Stream tags (e.g. <c>-Radio-0</c>, <c>-All</c>) are appended by callers after this base.
+        /// </summary>
+        protected static string BuildRecordingFilePathBase()
+        {
+            var stamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmss", CultureInfo.InvariantCulture);
+            return Path.Combine(AudioRecordingManager.RecordingsDirectory, $"SRS_{stamp}Z");
         }
 
         public void ProcessAudio()

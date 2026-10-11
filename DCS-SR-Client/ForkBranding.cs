@@ -18,11 +18,14 @@ public static class ForkBranding
     public const string BaseVersion = "2.4.1.0";
 
     /// <summary>Fork packaging iteration for SemVer build metadata (+N).</summary>
-    public const int ForkBuild = 2;
+    public const int ForkBuild = 3;
 
     /// <summary>User-facing version, e.g. 2.4.1.0+2.</summary>
     public static string DisplayVersion => $"{BaseVersion}+{ForkBuild}";
 
     public static string SettingsDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "455th-SRS");
+
+    /// <summary>Default transmission recordings folder under the per-user settings directory.</summary>
+    public static string RecordingsDirectory => Path.Combine(SettingsDirectory, "Recordings");
 }

@@ -38,6 +38,8 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
     private IPEndPoint _serverEndpoint;
     private TcpClient _tcpClient;
     private CancellationTokenSource _cts;
+    private TCPClientStatusMessage.ErrorCode _pendingDisconnectReason =
+        TCPClientStatusMessage.ErrorCode.TIMEOUT;
 
     public TCPClientHandler(string guid, SRClientBase playerUnitState)
     {
@@ -48,7 +50,7 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
 
     public async Task HandleAsync(DisconnectRequestMessage message, CancellationToken cancellationToken)
     {
-        await RequestDisconnectAsync();
+        await RequestDisconnectAsync(TCPClientStatusMessage.ErrorCode.USER_DISCONNECTED);
     }
 
     public async Task HandleAsync(EAMConnectRequestMessage eamConnectRequestMessage, CancellationToken cancellationToken)
@@ -139,7 +141,7 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
         if (_lastSent > 1 && TimeSpan.FromTicks(DateTime.Now.Ticks - _lastSent).TotalSeconds > timeout)
         {
             Logger.Warn("Disconnecting - Idle Time out");
-            await RequestDisconnectAsync();
+            await RequestDisconnectAsync(TCPClientStatusMessage.ErrorCode.USER_DISCONNECTED);
         }
     }
 
@@ -147,6 +149,7 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
     public void TryConnect(IPEndPoint endpoint)
     {
         _serverEndpoint = endpoint;
+        _pendingDisconnectReason = TCPClientStatusMessage.ErrorCode.TIMEOUT;
 
         //make absolutely sure we only connect once
         try
@@ -211,14 +214,17 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
                     else
                     {
                         Logger.Error($"Failed to connect to server @ {_serverEndpoint}");
-                        await EventBus.Instance.PublishOnUIThreadAsync(new TCPClientStatusMessage(false,
-                            TCPClientStatusMessage.ErrorCode.TIMEOUT));
+                        SetDisconnectReason(TCPClientStatusMessage.ErrorCode.TIMEOUT);
                     }
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    Logger.Info("Connect cancelled.");
                 }
                 catch (Exception ex)
                 {
                     Logger.Error(ex, "Could not connect to server");
-                    await RequestDisconnectAsync();
+                    await RequestDisconnectAsync(TCPClientStatusMessage.ErrorCode.TIMEOUT);
                 }
 
                 Disconnect();
@@ -376,7 +382,7 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
                                 if (serverMessage.Version == null)
                                 {
                                     Logger.Error("Disconnecting Unversioned Server");
-                                    await RequestDisconnectAsync();
+                                    await RequestDisconnectAsync(TCPClientStatusMessage.ErrorCode.INVALID_SERVER);
                                     break;
                                 }
 
@@ -393,7 +399,7 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
                                     //TODO show warning
                                     ShowVersionMistmatchWarning(serverMessage.Version);
 
-                                    await RequestDisconnectAsync();
+                                    await RequestDisconnectAsync(TCPClientStatusMessage.ErrorCode.MISMATCHED_SERVER);
                                     break;
                                 }
 
@@ -440,7 +446,7 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
                                 //TODO handle this on the client
                                 ShowVersionMistmatchWarning(serverMessage.Version);
 
-                                await RequestDisconnectAsync();
+                                await RequestDisconnectAsync(TCPClientStatusMessage.ErrorCode.MISMATCHED_SERVER);
                                 break;
                             case NetworkMessage.MessageType.EXTERNAL_AWACS_MODE_PASSWORD:
 
@@ -472,7 +478,7 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
                         if (decodeErrors > MAX_DECODE_ERRORS)
                         {
                             ShowVersionMistmatchWarning("unknown");
-                            await RequestDisconnectAsync();
+                            await RequestDisconnectAsync(TCPClientStatusMessage.ErrorCode.MISMATCHED_SERVER);
                             break;
                         }
                     }
@@ -486,6 +492,7 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
             catch (Exception ex)
             {
                 Logger.Error(ex, "Client exception reading - Disconnecting ");
+                SetDisconnectReason(TCPClientStatusMessage.ErrorCode.TIMEOUT);
             }
         }
 
@@ -548,7 +555,7 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
         {
             Logger.Error(ex, "Client exception sending to server");
 
-            await RequestDisconnectAsync();
+            await RequestDisconnectAsync(TCPClientStatusMessage.ErrorCode.TIMEOUT);
         }
     }
 
@@ -561,21 +568,38 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
     }
 
     //implement IDispose? To close stuff properly?
-    public async Task RequestDisconnectAsync()
+    public async Task RequestDisconnectAsync(
+        TCPClientStatusMessage.ErrorCode reason = TCPClientStatusMessage.ErrorCode.TIMEOUT)
     {
+        SetDisconnectReason(reason);
         var cts = _cts;
         if (cts != null)
         {
             await cts.CancelAsync();
         }
-        
     }
+
+    private void SetDisconnectReason(TCPClientStatusMessage.ErrorCode reason)
+    {
+        // Intentional disconnect always wins; terminal protocol errors beat generic timeouts.
+        if (_pendingDisconnectReason == TCPClientStatusMessage.ErrorCode.USER_DISCONNECTED)
+            return;
+
+        if ((_pendingDisconnectReason == TCPClientStatusMessage.ErrorCode.MISMATCHED_SERVER ||
+             _pendingDisconnectReason == TCPClientStatusMessage.ErrorCode.INVALID_SERVER) &&
+            reason == TCPClientStatusMessage.ErrorCode.TIMEOUT)
+            return;
+
+        _pendingDisconnectReason = reason;
+    }
+
     private void Disconnect()
     {
-        Logger.Info("Disconnecting from server...");
+        Logger.Info($"Disconnecting from server... ({_pendingDisconnectReason})");
         EventBus.Instance.Unsubscribe(this);
 
         _lastSent = DateTime.Now.Ticks;
+        var reason = _pendingDisconnectReason;
 
         try
         {
@@ -583,12 +607,13 @@ public class TCPClientHandler : IHandle<DisconnectRequestMessage>, IHandle<UnitU
             {
                 _tcpClient?.Close(); // this'll stop the socket blocking
                 _tcpClient = null;
-                EventBus.Instance.PublishOnUIThreadAsync(new TCPClientStatusMessage(false));
+                EventBus.Instance.PublishOnUIThreadAsync(new TCPClientStatusMessage(false, reason));
             }
         }
         catch (Exception ex)
         {
             Logger.Warn(ex, "Error closing tcp client");
+            EventBus.Instance.PublishOnUIThreadAsync(new TCPClientStatusMessage(false, reason));
         }
 
         Logger.Info("Disconnected.");

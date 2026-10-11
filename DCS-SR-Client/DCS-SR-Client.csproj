@@ -31,8 +31,8 @@
         <AssemblyVersion>2.4.1.0</AssemblyVersion>
         <FileVersion>2.4.1.0</FileVersion>
         <Version>2.4.1.0</Version>
-        <InformationalVersion>2.4.1.0+2</InformationalVersion>
-        <ApplicationIcon>audio-headset.ico</ApplicationIcon>
+        <InformationalVersion>2.4.1.0+3</InformationalVersion>
+        <ApplicationIcon>455th-srs.ico</ApplicationIcon>
     </PropertyGroup>
     <PropertyGroup>
         <StartupObject>Ciribob.DCS.SimpleRadio.Standalone.Client.App</StartupObject>
@@ -474,6 +474,7 @@
         </None>
     </ItemGroup>
     <ItemGroup>
+        <Resource Include="455th-srs.ico" />
         <Resource Include="audio-headset.ico" />
     </ItemGroup>
     <ItemGroup>
@@ -554,13 +555,6 @@
         <Page Update="UI\ClientWindow\AwacsRadioOverlayWindow\AwacsRadioControlGroup.xaml">
             <Generator>MSBuild:Compile</Generator>
         </Page>
-        <EmbeddedResource Update="Properties\Resources.zh.resx">
-          <Generator>PublicResXFileCodeGenerator</Generator>
-          <DependentUpon>Resources.resx</DependentUpon>
-        </EmbeddedResource>
-        <EmbeddedResource Update="Properties\Resources.ru-RU.resx">
-          <Generator>PublicResXFileCodeGenerator</Generator>
-        </EmbeddedResource>
     </ItemGroup>
     <!-- WebRtcVadSharp 1.3.2 publishes its native DLL beneath runtimes\, but
          does not register it as a runtime asset. P/Invoke therefore requires

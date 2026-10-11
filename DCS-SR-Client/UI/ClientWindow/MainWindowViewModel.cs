@@ -43,12 +43,14 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
     IHandle<ToogleAwacsRadioOverlayMessage>, IHandle<ToggleSingleStackRadioOverlayMessage>
 {
     private static readonly long OVERLAY_DEBOUNCE = 500;
+    private static readonly int ReconnectBackoffCapSeconds = 30;
     private readonly AudioManager _audioManager;
 
     private readonly GlobalSettingsStore _globalSettings = GlobalSettingsStore.Instance;
 
     private readonly DispatcherTimer _updateTimer;
     private readonly Logger Logger = LogManager.GetCurrentClassLogger();
+    private readonly object _reconnectLock = new();
 
     private AudioPreview _audioPreview;
     private AwaRadioOverlayWindow _awacsRadioOverlay;
@@ -64,6 +66,18 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
 
     private long lastAwacsToggleTime;
     private long lastRadioToggleTime;
+
+    private bool _wantConnected;
+    private bool _hadSuccessfulConnection;
+    private IPEndPoint _lastEndpoint;
+    private int _reconnectAttempt;
+    private CancellationTokenSource _reconnectCts;
+    private bool _isReconnecting;
+    /// <summary>
+    /// When true, connection lifecycle must not steal focus (no TaskDialogs / BringToFront).
+    /// Used for auto-reconnect while the user may be in-cockpit.
+    /// </summary>
+    private bool _suppressForegroundDialogs;
 
     public MainWindowViewModel()
     {
@@ -162,10 +176,27 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
 
     public bool IsConnected { get; set; }
 
+    public bool IsReconnecting
+    {
+        get => _isReconnecting;
+        set
+        {
+            if (_isReconnecting == value) return;
+            _isReconnecting = value;
+            NotifyPropertyChanged();
+            NotifyPropertyChanged(nameof(ConnectText));
+            NotifyPropertyChanged(nameof(IsNotConnected));
+            NotifyPropertyChanged(nameof(PreviewEnabled));
+            NotifyPropertyChanged(nameof(ReconnectStatusText));
+        }
+    }
+
     //WPF cant invert a binding - this controls the input box for address
-    public bool IsNotConnected => !IsConnected;
+    public bool IsNotConnected => !IsConnected && !IsReconnecting;
 
     public bool IsVoIPConnected { get; set; }
+
+    public string ReconnectStatusText { get; set; } = string.Empty;
 
     public DelegateCommand TrayIconQuitCommand { get; set; }
 
@@ -177,7 +208,7 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
 
     public ICommand SingleStackOverlayCommand { get; set; }
 
-    public bool PreviewEnabled => AudioInput.MicrophoneAvailable && !IsConnected;
+    public bool PreviewEnabled => AudioInput.MicrophoneAvailable && !IsConnected && !IsReconnecting;
 
     public float SpeakerVU
     {
@@ -245,6 +276,8 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
         {
             if (IsConnected)
                 return Resources.StartStopDisconnect;
+            if (IsReconnecting)
+                return Resources.StartStopConnecting;
             return Resources.StartStop;
         }
     }
@@ -401,14 +434,14 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
                     Logger.Info($"Switching from {ServerAddress} to {message.Address}");
                     ConnectIsEnabled = false;
                     ServerAddress = message.Address;
-                    Stop();
+                    await DisconnectUserInitiatedAsync();
                     ConnectIsEnabled = false;
                     await Task.Delay(2000);
                     await ConnectAsync();
                 }
             }
         }
-        else
+        else if (!IsReconnecting)
         {
             Logger.Info($"Received auto connect message for {message.Address} - Connecting");
             ServerAddress = message.Address;
@@ -447,42 +480,103 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
 
     public async Task HandleAsync(TCPClientStatusMessage obj, CancellationToken cancellationToken)
     {
-        await Task.Run(async Task () =>
+        await Task.Run(() =>
         {
             if (obj.Connected)
-            {
-                ConnectIsEnabled = true;
-                //TODO dont let this trigger again
-                IsConnected = true;
-                //connection sound
-                if (_globalSettings.GetClientSettingBool(GlobalSettingsKeys.PlayConnectionSounds))
-                    try
-                    {
-                        Sounds.BeepConnected.Play();
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Warn(ex, "Failed to play connect sound");
-                    }
-
-                if (obj.Address != null)
-                    StartAudio(obj.Address);
-                else
-                    Logger.Error("TCPClientStatusMessage - Connect sent without address and safely ignored.");
-
-                _dcsManager?.Stop();
-
-                _dcsManager = new DCSRadioSyncManager(ClientStateSingleton.Instance.ShortGUID);
-                _dcsManager.Start();
-            }
+                HandleConnected(obj);
             else
-            {
-                //disconnect sound
-                Stop(obj.Error);
-            }
+                HandleDisconnected(obj.Error);
 
             NotifyPropertyChanged(nameof(IsEAMAvailable));
             NotifyPropertyChanged(nameof(EAMConnectButtonText));
+            NotifyPropertyChanged(nameof(ConnectText));
+        });
+    }
+
+    private void HandleConnected(TCPClientStatusMessage obj)
+    {
+        CancelReconnectScheduling();
+        _wantConnected = true;
+        _hadSuccessfulConnection = true;
+        if (obj.Address != null)
+            _lastEndpoint = obj.Address;
+
+        IsReconnecting = false;
+        _reconnectAttempt = 0;
+        ReconnectStatusText = string.Empty;
+        NotifyPropertyChanged(nameof(ReconnectStatusText));
+
+        ConnectIsEnabled = true;
+        IsConnected = true;
+
+        if (_globalSettings.GetClientSettingBool(GlobalSettingsKeys.PlayConnectionSounds))
+            try
+            {
+                Sounds.BeepConnected.Play();
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Failed to play connect sound");
+            }
+
+        var audioStarted = true;
+        if (obj.Address != null)
+            audioStarted = StartAudio(obj.Address);
+        else
+            Logger.Error("TCPClientStatusMessage - Connect sent without address and safely ignored.");
+
+        // Clear after StartAudio so reconnect audio failures stay silent.
+        _suppressForegroundDialogs = false;
+
+        if (!audioStarted || !IsConnected)
+            return;
+
+        _dcsManager?.Stop();
+
+        _dcsManager = new DCSRadioSyncManager(ClientStateSingleton.Instance.ShortGUID);
+        _dcsManager.Start();
+
+        TryRejoinExternalAwacsMode();
+    }
+
+    private void HandleDisconnected(TCPClientStatusMessage.ErrorCode error)
+    {
+        var shouldReconnect = _wantConnected
+                              && _hadSuccessfulConnection
+                              && error == TCPClientStatusMessage.ErrorCode.TIMEOUT
+                              && _globalSettings.GetClientSettingBool(GlobalSettingsKeys.AutoReconnect);
+
+        CleanupConnection(playDisconnectSound: IsConnected);
+
+        if (shouldReconnect)
+        {
+            Logger.Info($"Uncommanded disconnect ({error}) - scheduling reconnect");
+            ScheduleReconnect();
+        }
+        else
+        {
+            _wantConnected = false;
+            CancelReconnectScheduling();
+            IsReconnecting = false;
+            _reconnectAttempt = 0;
+            ReconnectStatusText = string.Empty;
+            NotifyPropertyChanged(nameof(ReconnectStatusText));
+            ResetRadioState();
+            ConnectIsEnabled = true;
+        }
+    }
+
+    private void TryRejoinExternalAwacsMode()
+    {
+        if (!ClientStateSingleton.Instance.ExternalAWACSModelSelected)
+            return;
+        if (string.IsNullOrEmpty(EAMPassword))
+            return;
+
+        EventBus.Instance.PublishOnBackgroundThreadAsync(new EAMConnectRequestMessage
+        {
+            Password = EAMPassword,
+            Name = EAMName
         });
     }
 
@@ -531,71 +625,33 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
 
     public async Task ConnectAsync()
     {
-        if (IsConnected)
+        if (IsConnected || IsReconnecting)
         {
             ConnectIsEnabled = false;
-            Stop();
+            await DisconnectUserInitiatedAsync();
+            ConnectIsEnabled = true;
+            return;
         }
-        else
+
+        ConnectIsEnabled = false;
+        //stop preview
+        _audioPreview?.StopEncoding();
+        _audioPreview = null;
+
+        // Manual connect may show dialogs; auto-reconnect must never steal focus.
+        _suppressForegroundDialogs = false;
+
+        IsConnected = true;
+        await ShowMicPassthroughWarningAsync();
+
+        try
         {
-            ConnectIsEnabled = false;
-            //stop preview
-            _audioPreview?.StopEncoding();
-            _audioPreview = null;
-
-            IsConnected = true;
-            await ShowMicPassthroughWarningAsync();
-
-            try
-            {
-                //process hostname
-                var resolvedAddresses = Dns.GetHostAddresses(GetAddressFromTextBox());
-                var ip = resolvedAddresses.FirstOrDefault(xa =>
-                    xa.AddressFamily ==
-                    AddressFamily
-                        .InterNetwork); // Ensure we get an IPv4 address in case the host resolves to both IPv6 and IPv4
-
-                if (ip != null)
-                {
-                    var resolvedIp = ip;
-                    var port = GetPortFromTextBox();
-
-
-                    _client = new TCPClientHandler(ClientState.ShortGUID,
-                        new SRClientBase
-                        {
-                            LatLngPosition = new LatLngPosition(),
-                            AllowRecord =
-                                GlobalSettingsStore.Instance.GetClientSettingBool(GlobalSettingsKeys.AllowRecording),
-                            ClientGuid = ClientStateSingleton.Instance.ShortGUID,
-                            Coalition = 0,
-                            Name = ClientStateSingleton.Instance.LastSeenName,
-                            RadioInfo = ClientState.DcsPlayerRadioInfo.ConvertToRadioBase(),
-                            Seat = 0
-                        });
-                    _client.TryConnect(new IPEndPoint(resolvedIp, port));
-                }
-                else
-                {
-                    //invalid ID
-                    await TaskDialog.ShowDialogAsync(new TaskDialogPage
-                    {
-                        Caption = "Host Name Error",
-                        Heading = "Invalid IP or Host Name!",
-                        Text = "Please check the IP address or host name you entered and try again.",
-                        Icon = TaskDialogIcon.Error,
-                        Buttons = [TaskDialogButton.OK]
-                    });
-
-                    IsConnected = false;
-                }
-            }
-            catch (Exception ex) when (ex is SocketException || ex is ArgumentException)
+            if (!TryResolveServerEndpoint(out var endpoint, out var errorHeading))
             {
                 await TaskDialog.ShowDialogAsync(new TaskDialogPage
                 {
                     Caption = "Host Name Error",
-                    Heading = "Invalid IP or Host Name!",
+                    Heading = errorHeading,
                     Text = "Please check the IP address or host name you entered and try again.",
                     Icon = TaskDialogIcon.Error,
                     Buttons = [TaskDialogButton.OK]
@@ -603,14 +659,53 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
 
                 IsConnected = false;
             }
+            else
+            {
+                _lastEndpoint = endpoint;
+                StartClientConnection(endpoint);
+            }
+        }
+        catch (Exception ex) when (ex is SocketException || ex is ArgumentException)
+        {
+            await TaskDialog.ShowDialogAsync(new TaskDialogPage
+            {
+                Caption = "Host Name Error",
+                Heading = "Invalid IP or Host Name!",
+                Text = "Please check the IP address or host name you entered and try again.",
+                Icon = TaskDialogIcon.Error,
+                Buttons = [TaskDialogButton.OK]
+            });
+
+            IsConnected = false;
         }
 
         ConnectIsEnabled = true;
+        NotifyPropertyChanged(nameof(ConnectText));
     }
 
-    private void Stop(TCPClientStatusMessage.ErrorCode connectionError = TCPClientStatusMessage.ErrorCode.TIMEOUT)
+    private async Task DisconnectUserInitiatedAsync()
     {
-        if (IsConnected && _globalSettings.GetClientSettingBool(GlobalSettingsKeys.PlayConnectionSounds))
+        _wantConnected = false;
+        _hadSuccessfulConnection = false;
+        _suppressForegroundDialogs = false;
+        CancelReconnectScheduling();
+        IsReconnecting = false;
+        _reconnectAttempt = 0;
+        ReconnectStatusText = string.Empty;
+        NotifyPropertyChanged(nameof(ReconnectStatusText));
+
+        CleanupConnection(playDisconnectSound: IsConnected,
+            disconnectReason: TCPClientStatusMessage.ErrorCode.USER_DISCONNECTED);
+        ResetRadioState();
+        ConnectIsEnabled = true;
+        NotifyPropertyChanged(nameof(ConnectText));
+        await Task.CompletedTask;
+    }
+
+    private void CleanupConnection(bool playDisconnectSound,
+        TCPClientStatusMessage.ErrorCode disconnectReason = TCPClientStatusMessage.ErrorCode.TIMEOUT)
+    {
+        if (playDisconnectSound && _globalSettings.GetClientSettingBool(GlobalSettingsKeys.PlayConnectionSounds))
             try
             {
                 Sounds.BeepDisconnected.Play();
@@ -631,16 +726,167 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
             Logger.Warn(ex, "Failed to stop enconding audio");
         }
 
-
         _dcsManager?.Stop();
         _dcsManager = null;
 
-        _client?.RequestDisconnectAsync();
+        var client = _client;
         _client = null;
+        client?.RequestDisconnectAsync(disconnectReason);
+    }
 
+    private void ResetRadioState()
+    {
         ClientState.DcsPlayerRadioInfo.Reset();
         ClientState.PlayerCoaltionLocationMetadata.Reset();
+    }
+
+    private void ScheduleReconnect()
+    {
+        if (!_wantConnected || !_hadSuccessfulConnection)
+            return;
+        if (!_globalSettings.GetClientSettingBool(GlobalSettingsKeys.AutoReconnect))
+            return;
+
+        CancellationToken token;
+        int attempt;
+        lock (_reconnectLock)
+        {
+            _reconnectCts?.Cancel();
+            _reconnectCts?.Dispose();
+            _reconnectCts = new CancellationTokenSource();
+            token = _reconnectCts.Token;
+            _reconnectAttempt++;
+            attempt = _reconnectAttempt;
+        }
+
+        IsReconnecting = true;
+        ReconnectStatusText = string.Format(Resources.ReconnectStatus, attempt);
+        NotifyPropertyChanged(nameof(ReconnectStatusText));
+        NotifyPropertyChanged(nameof(ConnectText));
         ConnectIsEnabled = true;
+
+        // attempt 1 -> 2s, 2 -> 4s, 3 -> 8s, ... capped at 30s
+        var delaySeconds = Math.Min(ReconnectBackoffCapSeconds, 1 << Math.Min(attempt, 5));
+
+        Logger.Info($"Scheduling reconnect attempt {attempt} in {delaySeconds}s");
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), token);
+                if (token.IsCancellationRequested || !_wantConnected)
+                    return;
+
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    if (!_wantConnected || token.IsCancellationRequested)
+                        return;
+                    AttemptReconnect();
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                // cancelled
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn(ex, "Reconnect schedule failed");
+            }
+        }, token);
+    }
+
+    private void AttemptReconnect()
+    {
+        if (!_wantConnected)
+            return;
+
+        Logger.Info($"Attempting reconnect #{_reconnectAttempt} to {ServerAddress}");
+
+        // Never steal focus from DCS / the sim while recovering mid-flight.
+        _suppressForegroundDialogs = true;
+
+        if (!TryResolveServerEndpoint(out var endpoint, out _))
+        {
+            if (_lastEndpoint == null)
+            {
+                Logger.Warn("Reconnect aborted - could not resolve server address");
+                ScheduleReconnect();
+                return;
+            }
+
+            endpoint = _lastEndpoint;
+        }
+        else
+        {
+            _lastEndpoint = endpoint;
+        }
+
+        StartClientConnection(endpoint);
+    }
+
+    private void StartClientConnection(IPEndPoint endpoint)
+    {
+        _client = new TCPClientHandler(ClientState.ShortGUID,
+            new SRClientBase
+            {
+                LatLngPosition = new LatLngPosition(),
+                AllowRecord =
+                    GlobalSettingsStore.Instance.GetClientSettingBool(GlobalSettingsKeys.AllowRecording),
+                ClientGuid = ClientStateSingleton.Instance.ShortGUID,
+                Coalition = 0,
+                Name = ClientStateSingleton.Instance.LastSeenName,
+                RadioInfo = ClientState.DcsPlayerRadioInfo.ConvertToRadioBase(),
+                Seat = 0
+            });
+        _client.TryConnect(endpoint);
+    }
+
+    private bool TryResolveServerEndpoint(out IPEndPoint endpoint, out string errorHeading)
+    {
+        endpoint = null;
+        errorHeading = "Invalid IP or Host Name!";
+
+        try
+        {
+            var resolvedAddresses = Dns.GetHostAddresses(GetAddressFromTextBox());
+            var ip = resolvedAddresses.FirstOrDefault(xa =>
+                xa.AddressFamily == AddressFamily.InterNetwork);
+
+            if (ip == null)
+                return false;
+
+            endpoint = new IPEndPoint(ip, GetPortFromTextBox());
+            return true;
+        }
+        catch (Exception ex) when (ex is SocketException || ex is ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private void CancelReconnectScheduling()
+    {
+        lock (_reconnectLock)
+        {
+            try
+            {
+                _reconnectCts?.Cancel();
+                _reconnectCts?.Dispose();
+            }
+            catch (Exception)
+            {
+                // ignored
+            }
+
+            _reconnectCts = null;
+        }
+    }
+
+    // Kept for any remaining call sites that expect Stop()
+    private void Stop(TCPClientStatusMessage.ErrorCode connectionError = TCPClientStatusMessage.ErrorCode.TIMEOUT)
+    {
+        _ = DisconnectUserInitiatedAsync();
     }
 
     private string GetAddressFromTextBox()
@@ -721,18 +967,38 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
         NotifyPropertyChanged(nameof(AudioSettingsEnabled));
     }
 
-    private void StartAudio(IPEndPoint endPoint)
+    private bool StartAudio(IPEndPoint endPoint)
     {
+        var started = false;
         //Must be main thread
         App.Current.Dispatcher.Invoke(delegate
         {
             try
             {
                 _audioManager.StartEncoding(ClientState.ShortGUID, InputManager, endPoint);
+                started = true;
             }
             catch (Exception ex)
             {
                 Logger.Error(ex, "Unable to start audio session. Error:" + ex.Message);
+
+                // Auto-reconnect must never modal-popup over the sim.
+                if (_suppressForegroundDialogs)
+                {
+                    _wantConnected = false;
+                    _hadSuccessfulConnection = false;
+                    CancelReconnectScheduling();
+                    IsReconnecting = false;
+                    CleanupConnection(playDisconnectSound: false,
+                        disconnectReason: TCPClientStatusMessage.ErrorCode.USER_DISCONNECTED);
+                    ResetRadioState();
+                    ReconnectStatusText = Resources.ReconnectAudioFailed;
+                    NotifyPropertyChanged(nameof(ReconnectStatusText));
+                    NotifyPropertyChanged(nameof(ConnectText));
+                    ConnectIsEnabled = true;
+                    return;
+                }
+
                 Stop();
 
                 var isMissingNative =
@@ -769,6 +1035,8 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
                 });
             }
         });
+
+        return started;
     }
 
     private void SingleRadioStackOverlay()
@@ -873,10 +1141,7 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
         //stop timer
         _updateTimer?.Stop();
 
-        _client?.RequestDisconnectAsync();
-        _client = null;
-
-        Stop();
+        _ = DisconnectUserInitiatedAsync();
 
         _audioPreview?.StopEncoding();
         _audioPreview = null;

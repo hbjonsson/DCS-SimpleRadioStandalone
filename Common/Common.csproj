@@ -13,7 +13,7 @@
         <Company>Ciribob - GitHub.com/Ciribob</Company>
         <AssemblyVersion>2.4.1.0</AssemblyVersion>
         <FileVersion>2.4.1.0</FileVersion>
-        <InformationalVersion>2.4.1.0+2</InformationalVersion>
+        <InformationalVersion>2.4.1.0+3</InformationalVersion>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
         <OutputPath>bin\x64\Debug\</OutputPath>
@@ -65,10 +65,6 @@
         <EmbeddedResource Update="Properties\Resources.resx">
             <Generator>PublicResXFileCodeGenerator</Generator>
             <LastGenOutput>Resources.Designer.cs</LastGenOutput>
-        </EmbeddedResource>
-        <EmbeddedResource Update="Properties\Resources.zh.resx">
-            <Generator>PublicResXFileCodeGenerator</Generator>
-            <DependentUpon>Resources.resx</DependentUpon>
         </EmbeddedResource>
     </ItemGroup>
 

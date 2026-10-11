@@ -18,7 +18,6 @@ public class ClientViewModel : Screen
 
     public ClientViewModel(SRClientBase client, IEventAggregator eventAggregator)
     {
-            //Thread.CurrentThread.CurrentUICulture = new CultureInfo("zh-CN");
         _eventAggregator = eventAggregator;
         Client = client;
         Client.PropertyChanged += ClientOnPropertyChanged;

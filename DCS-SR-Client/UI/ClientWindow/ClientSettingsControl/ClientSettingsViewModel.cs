@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -121,6 +122,47 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
             }
         });
 
+        BrowseRecordingsFolderCommand = new DelegateCommand(() =>
+        {
+            using var dialog = new System.Windows.Forms.FolderBrowserDialog
+            {
+                SelectedPath = RecordingsFolderPath,
+                Description = Resources.RecordingsFolder
+            };
+            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            {
+                _globalSettings.SetClientSetting(GlobalSettingsKeys.RecordingsFolder, dialog.SelectedPath, true);
+                NotifyPropertyChanged(nameof(RecordingsFolderDisplay));
+                NotifyPropertyChanged(nameof(RecordingsFolderPath));
+            }
+        });
+
+        ResetRecordingsFolderCommand = new DelegateCommand(() =>
+        {
+            _globalSettings.SetClientSetting(GlobalSettingsKeys.RecordingsFolder, string.Empty, true);
+            NotifyPropertyChanged(nameof(RecordingsFolderDisplay));
+            NotifyPropertyChanged(nameof(RecordingsFolderPath));
+        });
+
+        OpenRecordingsFolderCommand = new DelegateCommand(() =>
+        {
+            try
+            {
+                var path = RecordingsFolderPath;
+                Directory.CreateDirectory(path);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{path}\"",
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Unable to open recordings folder");
+            }
+        });
+
         DeleteProfileCommand = new DelegateCommand(() =>
         {
             var current = _globalSettings.ProfileSettingsStore.CurrentProfileName;
@@ -162,6 +204,10 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
     public ICommand CopyProfileCommand { get; set; }
     public ICommand RenameProfileCommand { get; set; }
     public ICommand DeleteProfileCommand { get; set; }
+
+    public ICommand BrowseRecordingsFolderCommand { get; set; }
+    public ICommand ResetRecordingsFolderCommand { get; set; }
+    public ICommand OpenRecordingsFolderCommand { get; set; }
 
     /**
          * Global Settings
@@ -207,6 +253,16 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         set
         {
             _globalSettings.SetClientSetting(GlobalSettingsKeys.AutoConnectMismatchPrompt, value);
+            NotifyPropertyChanged();
+        }
+    }
+
+    public bool AutoReconnect
+    {
+        get => _globalSettings.GetClientSettingBool(GlobalSettingsKeys.AutoReconnect);
+        set
+        {
+            _globalSettings.SetClientSetting(GlobalSettingsKeys.AutoReconnect, value);
             NotifyPropertyChanged();
         }
     }
@@ -393,6 +449,19 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         {
             _globalSettings.SetClientSetting(GlobalSettingsKeys.RecordingFormat, value);
             NotifyPropertyChanged();
+        }
+    }
+
+    public string RecordingsFolderPath => AudioRecordingManager.RecordingsDirectory;
+
+    public string RecordingsFolderDisplay
+    {
+        get
+        {
+            var custom = _globalSettings.GetClientSetting(GlobalSettingsKeys.RecordingsFolder).RawValue;
+            if (string.IsNullOrWhiteSpace(custom))
+                return "(default)";
+            return Path.GetFileName(custom.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         }
     }
 
@@ -1163,6 +1232,7 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         NotifyPropertyChanged(nameof(AutoConnectEnabled));
         NotifyPropertyChanged(nameof(AutoConnectPrompt));
         NotifyPropertyChanged(nameof(AutoConnectMismatchPrompt));
+        NotifyPropertyChanged(nameof(AutoReconnect));
         //ResetOverlayCommand
         NotifyPropertyChanged(nameof(RadioOverlayTaskbarItem));
 
@@ -1182,6 +1252,8 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         NotifyPropertyChanged(nameof(RecordTransmissions));
         NotifyPropertyChanged(nameof(SingleFileMixdown));
         NotifyPropertyChanged(nameof(RecordingQuality));
+        NotifyPropertyChanged(nameof(RecordingsFolderDisplay));
+        NotifyPropertyChanged(nameof(RecordingsFolderPath));
 
         NotifyPropertyChanged(nameof(AutoSelectInputProfile));
         NotifyPropertyChanged(nameof(CheckForBetaUpdates));

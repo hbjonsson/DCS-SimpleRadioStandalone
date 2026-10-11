@@ -203,7 +203,34 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Client.Properties {
                 return ResourceManager.GetString("AutoConnectMismatchPrompt", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Looks up a localized string similar to Auto Reconnect.
+        /// </summary>
+        public static string AutoReconnect {
+            get {
+                return ResourceManager.GetString("AutoReconnect", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Attempting to reconnect… (attempt {0}).
+        /// </summary>
+        public static string ReconnectStatus {
+            get {
+                return ResourceManager.GetString("ReconnectStatus", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Reconnected, but audio failed to start. Check SRS audio settings when safe.
+        /// </summary>
+        public static string ReconnectAudioFailed {
+            get {
+                return ResourceManager.GetString("ReconnectAudioFailed", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to Auto Connect Prompt.
         /// </summary>
@@ -2634,6 +2661,42 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Client.Properties {
         public static string RecordingFormat {
             get {
                 return ResourceManager.GetString("RecordingFormat", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Recordings Folder.
+        /// </summary>
+        public static string RecordingsFolder {
+            get {
+                return ResourceManager.GetString("RecordingsFolder", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Browse....
+        /// </summary>
+        public static string RecordingsFolderBrowse {
+            get {
+                return ResourceManager.GetString("RecordingsFolderBrowse", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Open.
+        /// </summary>
+        public static string RecordingsFolderOpen {
+            get {
+                return ResourceManager.GetString("RecordingsFolderOpen", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Reset.
+        /// </summary>
+        public static string RecordingsFolderReset {
+            get {
+                return ResourceManager.GetString("RecordingsFolderReset", resourceCulture);
             }
         }
         

@@ -26,6 +26,7 @@
                                 <RowDefinition />
                                 <RowDefinition />
                                 <RowDefinition />
+                                <RowDefinition />
 
                             </Grid.RowDefinitions>
                             <Label Grid.Row="0"
@@ -61,6 +62,17 @@
                                 Grid.Row="2"
                                 Grid.Column="1"
                                 ToggleValue="{Binding AutoConnectMismatchPrompt, Mode=TwoWay}" />
+
+                            <Label Grid.Row="3"
+                                   Grid.Column="0"
+                                   HorizontalContentAlignment="Center"
+                                   VerticalContentAlignment="Center"
+                                   Content="{x:Static p:Resources.AutoReconnect}" />
+
+                            <clientSettingsControl:SettingsToggleControl
+                                Grid.Row="3"
+                                Grid.Column="1"
+                                ToggleValue="{Binding AutoReconnect, Mode=TwoWay}" />
                         </Grid>
                     </GroupBox>
                     <GroupBox Header="{x:Static p:Resources.SRSInterfaceHeader}">
@@ -500,10 +512,35 @@
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
+                                   Content="{x:Static p:Resources.RecordingsFolder}" />
+                            <StackPanel Grid.Row="5"
+                                        Grid.Column="1"
+                                        Margin="10"
+                                        Orientation="Vertical">
+                                <Label Content="{Binding RecordingsFolderDisplay}"
+                                       ToolTip="{Binding RecordingsFolderPath}"
+                                       HorizontalAlignment="Center"
+                                       HorizontalContentAlignment="Center" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <Button Content="{x:Static p:Resources.RecordingsFolderBrowse}"
+                                            Command="{Binding BrowseRecordingsFolderCommand}"
+                                            Margin="0,0,6,0" />
+                                    <Button Content="{x:Static p:Resources.RecordingsFolderReset}"
+                                            Command="{Binding ResetRecordingsFolderCommand}"
+                                            Margin="0,0,6,0" />
+                                    <Button Content="{x:Static p:Resources.RecordingsFolderOpen}"
+                                            Command="{Binding OpenRecordingsFolderCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Label Grid.Row="6"
+                                   Grid.Column="0"
+                                   HorizontalContentAlignment="Center"
+                                   VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.DisallowedAudioTone}" />
 
                             <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="5"
+                                Grid.Row="6"
                                 Grid.Column="1"
                                 ToggleValue="{Binding DisallowedAudioTone, Mode=TwoWay}" />
                         </Grid>

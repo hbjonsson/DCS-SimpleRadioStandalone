@@ -288,7 +288,14 @@ public class AudioManager : IHandle<SRClientUpdateMessage>
 
         EventBus.Instance.SubscribeOnBackgroundThread(this);
 
-        AudioRecordingManager.Instance.Start(ClientStateSingleton.Instance.ShortGUID);
+        try
+        {
+            AudioRecordingManager.Instance.Start(ClientStateSingleton.Instance.ShortGUID);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Unable to start transmission recording; radio audio will continue without recording.");
+        }
     }
 
 

@@ -376,6 +376,11 @@
 
                         </StackPanel>
 
+                        <Label HorizontalAlignment="Center"
+                               HorizontalContentAlignment="Center"
+                               Margin="0,2,0,0"
+                               Content="{Binding ReconnectStatusText}" />
+
                         <!-- TODO fix this one -->
                         <Button Content="{x:Static p:Resources.Donate_OnClick}"
                                 Command="{Binding DonateCommand}"

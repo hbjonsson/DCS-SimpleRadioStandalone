@@ -146,7 +146,6 @@ public class Bootstrapper : BootstrapperBase
             {
                 if (result.UpdateAvailable)
                 {
-                        //Thread.CurrentThread.CurrentUICulture = new CultureInfo("zh-CN");
                         var choice = MessageBox.Show($"{Properties.Resources.MsgBoxUpdate1} {result.Branch} {Properties.Resources.MsgBoxUpdate2} {result.Branch} {Properties.Resources.MsgBoxUpdate3}\n\n{Properties.Resources.MsgBoxUpdate4}",
                             Properties.Resources.MsgBoxUpdateTitle, MessageBoxButton.YesNoCancel, MessageBoxImage.Information);
                 

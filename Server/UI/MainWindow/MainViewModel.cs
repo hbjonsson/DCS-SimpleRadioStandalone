@@ -30,7 +30,6 @@ public sealed class MainViewModel : Screen, IHandle<ServerStateMessage>
     public MainViewModel(IWindowManager windowManager, IEventAggregator eventAggregator,
         ClientAdminViewModel clientAdminViewModel)
     {
-            //Thread.CurrentThread.CurrentUICulture = new CultureInfo("zh-CN");
         _windowManager = windowManager;
         _eventAggregator = eventAggregator;
         _clientAdminViewModel = clientAdminViewModel;

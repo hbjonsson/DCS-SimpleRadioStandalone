@@ -24,6 +24,25 @@ public class AudioRecordingManager
     private static volatile AudioRecordingManager _instance = new();
     private static readonly object _lock = new();
 
+    /// <summary>
+    /// Default recordings folder when <see cref="GlobalSettingsKeys.RecordingsFolder"/> is empty.
+    /// Relative "Recordings" keeps upstream behaviour; clients can override (e.g. LocalAppData).
+    /// </summary>
+    public static string DefaultRecordingsDirectory { get; set; } = "Recordings";
+
+    /// <summary>
+    /// Effective recordings directory: custom setting if set, otherwise <see cref="DefaultRecordingsDirectory"/>.
+    /// Resolved each access so a settings change applies to the next recording start.
+    /// </summary>
+    public static string RecordingsDirectory
+    {
+        get
+        {
+            var custom = GlobalSettingsStore.Instance.GetClientSetting(GlobalSettingsKeys.RecordingsFolder).RawValue;
+            return string.IsNullOrWhiteSpace(custom) ? DefaultRecordingsDirectory : custom.Trim();
+        }
+    }
+
     // full queues carry per-radio hydrated audio samples reconstructed from the raw data.
     private readonly List<AudioRecordingStreamHydrated> _clientFullQueues;
 
@@ -212,61 +231,71 @@ public class AudioRecordingManager
 
         _logger.Info("Transmission recording waiting for audio.");
 
-        // clear out existing queue lists and rebuild them from scratch. queues include
-        // dehydrated (w/o dead air) and hydrated (w/ dead air) per-radio sample queues for
-        // client and player sources. also, set up a mixer to combine player and client
-        // sources into a per-radio audio stream.
-
-        _clientRawQueues.Clear();
-        _playerRawQueues.Clear();
-        _clientFullQueues.Clear();
-        _playerFullQueues.Clear();
-        _radioFullQueues.Clear();
-
-        for (var i = 0; i < MAX_RADIOS; i++)
+        try
         {
-            _clientRawQueues.Add(new CircularFloatBuffer(MaxSamples));
-            _playerRawQueues.Add(new CircularFloatBuffer(MaxSamples));
+            // clear out existing queue lists and rebuild them from scratch. queues include
+            // dehydrated (w/o dead air) and hydrated (w/ dead air) per-radio sample queues for
+            // client and player sources. also, set up a mixer to combine player and client
+            // sources into a per-radio audio stream.
 
-            _clientFullQueues.Add(new AudioRecordingStreamHydrated(MaxSamples, $"{i}.c"));
-            _playerFullQueues.Add(new AudioRecordingStreamHydrated(MaxSamples, $"{i}.p"));
+            _clientRawQueues.Clear();
+            _playerRawQueues.Clear();
+            _clientFullQueues.Clear();
+            _playerFullQueues.Clear();
+            _radioFullQueues.Clear();
 
-            var streams = new List<AudioRecordingStream>
+            for (var i = 0; i < MAX_RADIOS; i++)
             {
-                _clientFullQueues[i],
-                _playerFullQueues[i]
-            };
-            _radioFullQueues.Add(new AudioRecordingStreamMixer(streams, $"-Radio-{i}"));
-        }
+                _clientRawQueues.Add(new CircularFloatBuffer(MaxSamples));
+                _playerRawQueues.Add(new CircularFloatBuffer(MaxSamples));
 
-        // setup the recording writer to emit a single file that contains a mix of all radios
-        // or multiple files that contains per radio traffic. stop any existing writer first.
+                _clientFullQueues.Add(new AudioRecordingStreamHydrated(MaxSamples, $"{i}.c"));
+                _playerFullQueues.Add(new AudioRecordingStreamHydrated(MaxSamples, $"{i}.p"));
 
-        _audioRecordingWriter?.Stop();
+                var streams = new List<AudioRecordingStream>
+                {
+                    _clientFullQueues[i],
+                    _playerFullQueues[i]
+                };
+                _radioFullQueues.Add(new AudioRecordingStreamMixer(streams, $"-Radio-{i}"));
+            }
 
-        if (GlobalSettingsStore.Instance.GetClientSettingBool(GlobalSettingsKeys.SingleFileMixdown))
-        {
-            // write single mixed file. create a writer with a single stream source: a mixer
-            // that combines all per-radio streams.
+            // setup the recording writer to emit a single file that contains a mix of all radios
+            // or multiple files that contains per radio traffic. stop any existing writer first.
 
-            var streams = new List<AudioRecordingStream>
+            _audioRecordingWriter?.Stop();
+
+            if (GlobalSettingsStore.Instance.GetClientSettingBool(GlobalSettingsKeys.SingleFileMixdown))
             {
-                new AudioRecordingStreamMixer(_radioFullQueues, "-All")
-            };
-            _audioRecordingWriter = CreateWriter(streams, SampleRate, MaxSamples);
+                // write single mixed file. create a writer with a single stream source: a mixer
+                // that combines all per-radio streams.
+
+                var streams = new List<AudioRecordingStream>
+                {
+                    new AudioRecordingStreamMixer(_radioFullQueues, "-All")
+                };
+                _audioRecordingWriter = CreateWriter(streams, SampleRate, MaxSamples);
+            }
+            else
+            {
+                // write per-radio audio files. create a write with N streams, one for each of the
+                // radios.
+
+                _audioRecordingWriter = CreateWriter(_radioFullQueues, SampleRate, MaxSamples);
+            }
+
+            _stop = false;
+            _processThreadDone = false;
+
+            new Thread(ProcessQueues).Start();
         }
-        else
+        catch (Exception ex)
         {
-            // write per-radio audio files. create a write with N streams, one for each of the
-            // radios.
-
-            _audioRecordingWriter = CreateWriter(_radioFullQueues, SampleRate, MaxSamples);
+            _logger.Error(ex, "Unable to start transmission recording; radio audio will continue without recording.");
+            _stop = true;
+            _processThreadDone = true;
+            _audioRecordingWriter = null;
         }
-
-        _stop = false;
-        _processThreadDone = false;
-
-        new Thread(ProcessQueues).Start();
     }
 
     public void Stop()

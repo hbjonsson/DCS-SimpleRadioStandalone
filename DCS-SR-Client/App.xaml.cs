@@ -1,4 +1,5 @@
 ﻿using Ciribob.DCS.SimpleRadio.Standalone.Client.Singletons;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Recording;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Settings;
 using NLog;
 using NLog.Config;
@@ -10,7 +11,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Security.Principal;
 using System.Text;
 using System.Threading;
@@ -35,6 +35,7 @@ public partial class App : Application
     {
         Directory.CreateDirectory(ForkBranding.SettingsDirectory);
         GlobalSettingsStore.Path = ForkBranding.SettingsDirectory + Path.DirectorySeparatorChar;
+        AudioRecordingManager.DefaultRecordingsDirectory = ForkBranding.RecordingsDirectory;
 
 #if false
         // Useful to track down threading issues.
@@ -51,18 +52,8 @@ public partial class App : Application
 
         System.Windows.Forms.Application.EnableVisualStyles();
 
-        // Common ones to use are -lang:en-us , -lang:zh , -lang:zh-cn , -lang:fr
-        try
-        {
-            string lang = Environment.GetCommandLineArgs().FirstOrDefault(x => x.StartsWith("-lang:"))?.Substring(6);
-            if (!string.IsNullOrEmpty(lang))
-            {
-                Logger.Warn($"Command Line Set Language Code : {lang}");
-                Thread.CurrentThread.CurrentUICulture = new CultureInfo(lang);
-            }
-        } catch (CultureNotFoundException e){ Logger.Error(e.Message); }
-        catch { /* ignored */ }
-
+        // English-only UI; ignore any legacy -lang: switches.
+        Thread.CurrentThread.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
 
         // This is a separately branded fork; do not submit fork exceptions to upstream SRS telemetry.
         AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionHandler;

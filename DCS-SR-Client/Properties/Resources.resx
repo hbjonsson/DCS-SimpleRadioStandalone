@@ -143,7 +143,7 @@
   </data>
   <assembly alias="System.Windows.Forms" name="System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" />
   <data name="audio_headset" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\audio-headset.ico;System.Drawing.Icon, System.Drawing, Version=4.0.0.0, Culture=neutral,
+    <value>..\455th-srs.ico;System.Drawing.Icon, System.Drawing, Version=4.0.0.0, Culture=neutral,
             PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="AutoConnectEnabled" xml:space="preserve">
@@ -154,6 +154,15 @@
   </data>
   <data name="AutoConnectMismatchPrompt" xml:space="preserve">
     <value>Auto Connect Mismatch Prompt</value>
+  </data>
+  <data name="AutoReconnect" xml:space="preserve">
+    <value>Auto Reconnect</value>
+  </data>
+  <data name="ReconnectStatus" xml:space="preserve">
+    <value>Attempting to reconnect… (attempt {0})</value>
+  </data>
+  <data name="ReconnectAudioFailed" xml:space="preserve">
+    <value>Reconnected, but audio failed to start. Check SRS audio settings when safe.</value>
   </data>
   <data name="AutoConnectPrompt" xml:space="preserve">
     <value>Auto Connect Prompt</value>
@@ -1230,6 +1239,18 @@ Requires Tx or Rx Effects On</value>
   </data>
   <data name="RecordingFormat" xml:space="preserve">
     <value>Recording Format (requires restart)</value>
+  </data>
+  <data name="RecordingsFolder" xml:space="preserve">
+    <value>Recordings Folder</value>
+  </data>
+  <data name="RecordingsFolderBrowse" xml:space="preserve">
+    <value>Browse...</value>
+  </data>
+  <data name="RecordingsFolderReset" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="RecordingsFolderOpen" xml:space="preserve">
+    <value>Open</value>
   </data>
   <data name="NoiseGainDB" xml:space="preserve">
     <value>Noise Gain (dB)</value>
