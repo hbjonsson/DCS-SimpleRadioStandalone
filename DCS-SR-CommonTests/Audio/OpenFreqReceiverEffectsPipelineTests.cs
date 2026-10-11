@@ -2,6 +2,7 @@ using System;
 using Ciribob.DCS.SimpleRadio.Standalone.Common;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Recording;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenFreqAudio;
@@ -174,5 +175,62 @@ public class OpenFreqReceiverEffectsPipelineTests
         Assert.IsTrue(Array.Exists(output, s => MathF.Abs(s) > 0.005f));
         foreach (var s in output)
             Assert.IsTrue(float.IsFinite(s));
+    }
+
+    [TestMethod]
+    public void TransmissionSegment_CopiesVolumeFromDeJitteredTransmission()
+    {
+        var audio = new float[32];
+        var seg = new TransmissionSegment(new DeJitteredTransmission
+        {
+            PCMMonoAudio = audio,
+            PCMAudioLength = audio.Length,
+            Modulation = Modulation.AM,
+            Decryptable = true,
+            Frequency = 125_000_000,
+            Volume = 0.37f,
+            Guid = "AAAAAAAAAAAAAAAAAAAAAA",
+            OriginalClientGuid = "AAAAAAAAAAAAAAAAAAAAAA",
+        });
+
+        Assert.AreEqual(0.37f, seg.Volume);
+    }
+
+    [TestMethod]
+    public void TransmissionSegment_PreviewCtor_DefaultsVolumeToUnity()
+    {
+        var seg = new TransmissionSegment(new float[8], Modulation.AM, 125_000_000);
+        Assert.AreEqual(1f, seg.Volume);
+    }
+
+    [TestMethod]
+    public void ApplyLinearGain_UnityIsNoOp()
+    {
+        var samples = new float[] { -0.9f, -0.25f, 0f, 0.5f, 1f };
+        var original = (float[])samples.Clone();
+
+        AudioManipulationHelper.ApplyLinearGain(samples, 1f);
+
+        CollectionAssert.AreEqual(original, samples);
+    }
+
+    [TestMethod]
+    public void ApplyLinearGain_HalfScalesLinearly()
+    {
+        var samples = new float[] { -0.8f, -0.2f, 0f, 0.4f, 1f };
+
+        AudioManipulationHelper.ApplyLinearGain(samples, 0.5f);
+
+        CollectionAssert.AreEqual(new float[] { -0.4f, -0.1f, 0f, 0.2f, 0.5f }, samples);
+    }
+
+    [TestMethod]
+    public void ApplyLinearGain_ZeroSilencesBuffer()
+    {
+        var samples = new float[] { -1f, 0.25f, 0.9f };
+
+        AudioManipulationHelper.ApplyLinearGain(samples, 0f);
+
+        CollectionAssert.AreEqual(new float[3], samples);
     }
 }

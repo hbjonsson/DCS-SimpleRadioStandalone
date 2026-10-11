@@ -40,6 +40,8 @@ public class RadioMixingProvider : ISampleProvider
     private long _lastEngineRefresh;
     private ReceiverEffectsEngine _receiverEffectsEngine = ReceiverEffectsEngine.SRS;
     private int _openFreqDrainSamplesRemaining;
+    /// <summary>Last OpenFreq AM radio volume; reused for post-TX drain so the tail follows the knob.</summary>
+    private float _openFreqRadioVolume = 1f;
 
     //  private readonly WaveFileWriter waveWriter;
     public RadioMixingProvider(WaveFormat waveFormat, int radioId)
@@ -172,6 +174,8 @@ public class RadioMixingProvider : ISampleProvider
                         openFreqRxActive = openFreqPipeline.WasSquelchOpen;
                         _openFreqDrainSamplesRemaining =
                             OpenFreqReceiverEffectsPipeline.DrainSampleCount(WaveFormat.SampleRate);
+                        // Same knob for every segment on this radio; apply after AGC + clip.
+                        _openFreqRadioVolume = segments[0].Volume;
                     }
                     else
                     {
@@ -182,6 +186,9 @@ public class RadioMixingProvider : ISampleProvider
 
                     //now clip all mixing
                     AudioManipulationHelper.ClipArray(targetSpan);
+                    // OpenFreq skips the SRS TX pipeline (where volume used to land); scale after clip.
+                    if (openFreqOwnsAm)
+                        AudioManipulationHelper.ApplyLinearGain(targetSpan, _openFreqRadioVolume);
                     availableInBuffer += targetSpan.Length;
 
                     // Drain newly queued audio.
@@ -216,6 +223,7 @@ public class RadioMixingProvider : ISampleProvider
                     targetSpan.Clear();
                     openFreqPipeline.ProcessDrain(targetSpan);
                     AudioManipulationHelper.ClipArray(targetSpan);
+                    AudioManipulationHelper.ApplyLinearGain(targetSpan, _openFreqRadioVolume);
                     availableInBuffer += targetSpan.Length;
                     _openFreqDrainSamplesRemaining = Math.Max(
                         0,
@@ -312,7 +320,10 @@ public class RadioMixingProvider : ISampleProvider
             _receiverEffectsEngine = ReceiverEffectsEngine.SRS;
 
         if (previous != _receiverEffectsEngine)
+        {
             openFreqPipeline.Reset();
+            _openFreqRadioVolume = 1f;
+        }
     }
 
     private int HandleStartEndTones(

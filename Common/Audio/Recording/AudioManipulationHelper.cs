@@ -124,4 +124,32 @@ public static class AudioManipulationHelper
             array[i] = Math.Clamp(array[i], -1f, 1f);
         }
     }
+
+    /// <summary>
+    /// Apply a linear loudness gain. Unity (<paramref name="gain"/> == 1) is a no-op
+    /// so full-volume OpenFreq AM keeps today's clip character bit-for-bit.
+    /// </summary>
+    public static void ApplyLinearGain(Span<float> array, float gain)
+    {
+        if (gain == 1f || array.IsEmpty)
+            return;
+
+        if (gain == 0f)
+        {
+            array.Clear();
+            return;
+        }
+
+        var vectorSize = Vector<float>.Count;
+        var remainder = array.Length % vectorSize;
+        var v_gain = new Vector<float>(gain);
+        for (var i = 0; i < array.Length - remainder; i += vectorSize)
+        {
+            var v_samples = Vector.LoadUnsafe(ref MemoryMarshal.GetReference(array), (nuint)i);
+            (v_samples * v_gain).CopyTo(array.Slice(i, vectorSize));
+        }
+
+        for (var i = array.Length - remainder; i < array.Length; ++i)
+            array[i] *= gain;
+    }
 }

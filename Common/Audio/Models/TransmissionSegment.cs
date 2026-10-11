@@ -26,6 +26,12 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models
         /// <summary>Transmit frequency in Hz (local DSP context; not a network field).</summary>
         public double Frequency { get; }
 
+        /// <summary>
+        /// Linear radio volume from overlay slider / cockpit knob
+        /// (<see cref="DeJitteredTransmission.Volume"/>). Applied after OpenFreq AGC.
+        /// </summary>
+        public float Volume { get; }
+
         public TransmissionSegment(DeJitteredTransmission transmission)
         {
             Audio = new float[transmission.PCMAudioLength];
@@ -42,6 +48,7 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models
             LineOfSightLoss = transmission.LineOfSightLoss;
             NoAudioEffects = transmission.NoAudioEffects;
             Frequency = transmission.Frequency;
+            Volume = transmission.Volume;
         }
 
         /// <summary>
@@ -67,6 +74,7 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models
             HasEncryption = !decryptable;
             IsSecondary = false;
             NoAudioEffects = false;
+            Volume = 1f;
         }
     }
 }
