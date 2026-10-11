@@ -1,5 +1,18 @@
 # 455th vAEW SRS Changelog
 
+## 2.4.1.0+5
+
+### Fixes
+- **Session recordings now capture post-DSP receive audio.** OpenFreq AM and classic SRS radio character (filtering, noise, AGC, squelch, levels) and OpenFreq post-TX drain tails are recorded the same way they are heard, instead of dry pre-effects PCM.
+
+### Enhancements
+- **Recording permission is now an application policy.** Using the 455th SRS client implies transmissions may be saved; the obsolete per-user recording opt-out and replacement-tone settings have been removed. Legacy `AllowRecord` wire metadata is ignored for recording decisions.
+
+### Install notes
+- Use the MSI for in-place upgrade into `Program Files\455th-SRS\Client`.
+- ZIP remains available as a portable fallback.
+- Based on upstream SRS **2.4.1.0**.
+
 ## 2.4.1.0+4
 
 ### Fixes

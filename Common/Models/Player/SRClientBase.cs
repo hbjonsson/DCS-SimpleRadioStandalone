@@ -53,8 +53,6 @@ public class SRClientBase : PropertyChangedBaseClass
 
     public LatLngPosition LatLngPosition { get; set; }
 
-    [JsonIgnore] public string AllowRecordingStatus => AllowRecord ? "R" : "-";
-
     [JsonIgnore] public bool Muted { get; set; }
 
     [JsonIgnore] public IPEndPoint VoipPort { get; set; }

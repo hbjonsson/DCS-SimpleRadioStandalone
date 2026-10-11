@@ -1,12 +1,8 @@
 ﻿using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
-using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
-using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Utility;
-using Ciribob.DCS.SimpleRadio.Standalone.Common.Network.Singletons;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Settings;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
@@ -14,7 +10,12 @@ using NLog;
 
 namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Recording;
 
-public class AudioRecordingManager
+internal interface IAudioRecordingSink
+{
+    void AppendProcessedClientAudio(int radioId, ReadOnlySpan<float> processedPcm);
+}
+
+public class AudioRecordingManager : IAudioRecordingSink
 {
     private const int MAX_BUFFER_SECONDS = 3;
 
@@ -49,7 +50,6 @@ public class AudioRecordingManager
     // raw queues carry per-radio dehydrated audio samples.
     private readonly List<CircularFloatBuffer> _clientRawQueues;
 
-    private readonly ConnectedClientsSingleton _connectedClientsSingleton = ConnectedClientsSingleton.Instance;
     private readonly List<AudioRecordingStreamHydrated> _playerFullQueues;
     private readonly List<CircularFloatBuffer> _playerRawQueues;
     private readonly List<AudioRecordingStream> _radioFullQueues;
@@ -59,7 +59,6 @@ public class AudioRecordingManager
     private int MaxSamples => SampleRate * MAX_BUFFER_SECONDS;
 
     private AudioRecordingWriterBase _audioRecordingWriter;
-    private string _clientGuid; //player guid
     private bool _processThreadDone;
 
     private bool _stop;
@@ -137,7 +136,7 @@ public class AudioRecordingManager
         // and stream available audio to the recording files.
         //
         // the algorithm assumes that, to first order, the dead air is reflected in intervals
-        // between writes to the raw queues (by AppendPlayerAudio() and AppendClientAudio()
+        // between writes to the raw queues (by AppendPlayerAudio() and AppendProcessedClientAudio()
         // methods). that is, raw queue writes for clips separated by, say, 2s of dead air will
         // be roughly 2s apart. this should naturally happen as long as the rest of the client
         // is providing audio as it occurs and not buffering.
@@ -219,9 +218,8 @@ public class AudioRecordingManager
         }
     }
 
-    public void Start(string clientGuid)
+    public void Start()
     {
-        _clientGuid = clientGuid;
         if (!GlobalSettingsStore.Instance.GetClientSettingBool(GlobalSettingsKeys.RecordAudio))
         {
             _processThreadDone = true;
@@ -317,54 +315,13 @@ public class AudioRecordingManager
             _playerRawQueues[radioId]?.Write(transmission, 0, length);
     }
 
-    internal void AppendClientAudio(int radioId, IReadOnlyList<TransmissionSegment> segments)
+    public void AppendProcessedClientAudio(int radioId, ReadOnlySpan<float> processedPcm)
     {
-        if (_stop || GlobalSettingsStore.Instance.GetClientSettingBool(GlobalSettingsKeys.RecordAudio) == false)
+        if (_stop
+            || processedPcm.IsEmpty
+            || GlobalSettingsStore.Instance.GetClientSettingBool(GlobalSettingsKeys.RecordAudio) == false)
             return;
-        
-        // Audio is preprocessed, all we need to do is run the filtering and mixdown.
-        var floatPool = ArrayPool<float>.Shared;
 
-        var mixLength = 0;
-        float[] mixBuffer = null;
-        var disallowedTone = GlobalSettingsStore.Instance.GetClientSettingBool(GlobalSettingsKeys.DisallowedAudioTone);
-        foreach (var segment in segments)
-        {
-            if (_connectedClientsSingleton.TryGetValue(segment.OriginalClientGuid, out var client))
-            {
-                var segmentSpan = segment.Audio.AsSpan();
-                if (mixLength < segmentSpan.Length)
-                {
-                    var resizedBuffer = floatPool.Rent(segmentSpan.Length);
-                    if (mixBuffer != null)
-                    {
-                        mixBuffer.AsSpan(0, mixLength).CopyTo(resizedBuffer);
-                        floatPool.Return(mixBuffer);
-                    }
-
-                    // Make sure the newly allocated area is clear.
-                    resizedBuffer.AsSpan(mixLength, segmentSpan.Length - mixLength).Clear();
-                    mixBuffer = resizedBuffer;
-                    mixLength = segmentSpan.Length;
-                }
-
-                if (client.AllowRecord
-                    || segment.OriginalClientGuid == _clientGuid) // Assume that client intends to record their outgoing transmissions
-                {
-                    AudioManipulationHelper.MixArraysClipped(mixBuffer.AsSpan(0, segmentSpan.Length), segmentSpan);
-                }
-                else if (disallowedTone)
-                {
-                    var audioTone = AudioManipulationHelper.SineWaveOut(segmentSpan.Length, SampleRate, 0.25);
-                    AudioManipulationHelper.MixArraysClipped(mixBuffer.AsSpan(0, segmentSpan.Length), audioTone.AsSpan(0, audioTone.Length));
-                }
-            }
-        }
-
-        if (mixLength > 0)
-        {
-            _clientRawQueues[radioId].Write(mixBuffer, 0, mixLength);
-            floatPool.Return(mixBuffer);
-        }
+        _clientRawQueues[radioId].Write(processedPcm);
     }
 }

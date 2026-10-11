@@ -95,13 +95,11 @@ public enum GlobalSettingsKeys
     AutoConnect,
     AutoReconnect,
 
-    AllowRecording,
     RecordAudio,
     SingleFileMixdown,
     RecordingQuality,
     RecordingFormat,
     RecordingsFolder,
-    DisallowedAudioTone,
     VOX,
     VOXMode,
     VOXMinimumTime,
@@ -340,14 +338,11 @@ public class GlobalSettingsStore
         { GlobalSettingsKeys.IdleTimeOut.ToString(), "600" }, // 10 mins
         { GlobalSettingsKeys.AutoReconnect.ToString(), "true" },
 
-        { GlobalSettingsKeys.AllowRecording.ToString(), "true" },
         { GlobalSettingsKeys.RecordAudio.ToString(), "false" },
         { GlobalSettingsKeys.SingleFileMixdown.ToString(), "false" },
         { GlobalSettingsKeys.RecordingQuality.ToString(), "V3" },
         { GlobalSettingsKeys.RecordingFormat.ToString(), "mp3" },
         { GlobalSettingsKeys.RecordingsFolder.ToString(), string.Empty },
-        { GlobalSettingsKeys.DisallowedAudioTone.ToString(), "false" },
-
         { GlobalSettingsKeys.VOX.ToString(), "false" },
         { GlobalSettingsKeys.VOXMode.ToString(), "3" },
         { GlobalSettingsKeys.VOXMinimumTime.ToString(), "300" },

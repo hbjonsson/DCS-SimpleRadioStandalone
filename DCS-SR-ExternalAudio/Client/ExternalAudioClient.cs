@@ -89,7 +89,7 @@ public class ExternalAudioClient : IHandle<TCPClientStatusMessage>
         var srClient = new SRClientBase
         {
             LatLngPosition = position,
-            AllowRecord = opts.Record,
+            AllowRecord = true,
             ClientGuid = Guid,
             Coalition = opts.Coalition,
             Name = opts.Name,

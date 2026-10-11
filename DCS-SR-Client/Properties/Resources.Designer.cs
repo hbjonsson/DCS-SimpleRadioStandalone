@@ -96,15 +96,6 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Client.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Allow Transmissions To Be Recorded.
-        /// </summary>
-        public static string AllowTransmissionsRecord {
-            get {
-                return ResourceManager.GetString("AllowTransmissionsRecord", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized string similar to Allow XInput Controller (Xbox controller).
         /// </summary>
         public static string AllowXInputController {
@@ -508,15 +499,6 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Client.Properties {
         public static string DisableExpansionRadios {
             get {
                 return ResourceManager.GetString("DisableExpansionRadios", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Record Tone for Disallowed Audio.
-        /// </summary>
-        public static string DisallowedAudioTone {
-            get {
-                return ResourceManager.GetString("DisallowedAudioTone", resourceCulture);
             }
         }
         

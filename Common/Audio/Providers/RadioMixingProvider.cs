@@ -17,7 +17,7 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers;
 public class RadioMixingProvider : ISampleProvider
 {
     private static readonly Logger logger = LogManager.GetCurrentClassLogger();
-    private readonly AudioRecordingManager _audioRecordingManager = AudioRecordingManager.Instance;
+    private readonly ProcessedAudioRecordingTap _recordingTap;
 
     private readonly CachedAudioEffectProvider _cachedAudioEffectsProvider;
     private readonly CircularFloatBuffer effectsBuffer;
@@ -49,11 +49,17 @@ public class RadioMixingProvider : ISampleProvider
 
     //  private readonly WaveFileWriter waveWriter;
     public RadioMixingProvider(WaveFormat waveFormat, int radioId)
+        : this(waveFormat, radioId, AudioRecordingManager.Instance)
+    {
+    }
+
+    internal RadioMixingProvider(WaveFormat waveFormat, int radioId, IAudioRecordingSink audioRecordingSink)
     {
         if (waveFormat.Encoding != WaveFormatEncoding.IeeeFloat)
             throw new ArgumentException("Mixer wave format must be IEEE float");
 
         this.radioId = radioId;
+        _recordingTap = new ProcessedAudioRecordingTap(radioId, audioRecordingSink);
         sources = new List<ClientAudioProvider>();
         WaveFormat = waveFormat;
         openFreqPipeline = new OpenFreqReceiverEffectsPipeline(radioId, waveFormat.SampleRate);
@@ -143,13 +149,6 @@ public class RadioMixingProvider : ISampleProvider
 
             var hasIncomingAudio = segments?.Count > 0;
 
-            //copy to the recording service - as we have everything we need to know about the audio
-            //at this point
-            if (hasIncomingAudio)
-            {
-                _audioRecordingManager.AppendClientAudio(radioId, segments);
-            }
-
             RefreshReceiverEngine();
             var openFreqAmOnly = false;
             var openFreqRxActive = false;
@@ -160,88 +159,12 @@ public class RadioMixingProvider : ISampleProvider
             {
                 try
                 {
-                    // Need to be able to hold whatever is left over + incoming audio.
-                    var totalSize = availableInBuffer + longestSegmentLength;
-                    if (mixBuffer == null || mixBuffer.Length < totalSize)
-                    {
-                        Array.Resize(ref mixBuffer, totalSize);
-                    }
-
-                    var targetSpan = mixBuffer.AsSpan(availableInBuffer, longestSegmentLength);
-                    targetSpan.Clear();
-
-                    // Cache receiving-radio volume for tone scaling (same knob for every segment).
-                    _radioToneVolume = segments[0].Volume;
-
-                    List<TransmissionSegment> openFreqAm = null;
-                    List<TransmissionSegment> fallback = null;
-                    if (_receiverEffectsEngine == ReceiverEffectsEngine.OpenFreq)
-                    {
-                        openFreqAm = new List<TransmissionSegment>(segments.Count);
-                        fallback = new List<TransmissionSegment>(segments.Count);
-                        foreach (var seg in segments)
-                        {
-                            if (OpenFreqReceiverEffectsPipeline.IsEligibleOpenFreqAm(seg))
-                                openFreqAm.Add(seg);
-                            else
-                                fallback.Add(seg);
-                        }
-                    }
-                    else
-                    {
-                        fallback = segments;
-                    }
-
-                    hasFallback = fallback != null && fallback.Count > 0;
-                    var hasOpenFreqAm = openFreqAm != null && openFreqAm.Count > 0;
-                    openFreqAmOnly = hasOpenFreqAm && !hasFallback;
-
-                    if (hasOpenFreqAm)
-                    {
-                        EnsureScratch(ref _openFreqScratch, longestSegmentLength);
-                        var amSpan = _openFreqScratch.AsSpan(0, longestSegmentLength);
-                        amSpan.Clear();
-                        openFreqPipeline.ProcessSegments(amSpan, openFreqAm);
-                        openFreqRxActive = openFreqPipeline.WasSquelchOpen;
-                        _openFreqRadioVolume = openFreqAm[0].Volume;
-                        // Post-AGC, post-clip character: scale then mix into target.
-                        AudioManipulationHelper.ClipArray(amSpan);
-                        AudioManipulationHelper.ApplyLinearGain(amSpan, _openFreqRadioVolume);
-                        MixInto(targetSpan, amSpan);
-
-                        // Drain only when this tick is OpenFreq-AM-only (no fallback bleeding in).
-                        if (openFreqAmOnly)
-                        {
-                            _openFreqDrainSamplesRemaining =
-                                OpenFreqReceiverEffectsPipeline.DrainSampleCount(WaveFormat.SampleRate);
-                            lastModulation = Modulation.AM;
-                        }
-                        else
-                        {
-                            _openFreqDrainSamplesRemaining = 0;
-                        }
-                    }
-                    else
-                    {
-                        _openFreqDrainSamplesRemaining = 0;
-                    }
-
-                    if (hasFallback)
-                    {
-                        EnsureScratch(ref _srsScratch, longestSegmentLength);
-                        var srsSpan = _srsScratch.AsSpan(0, longestSegmentLength);
-                        srsSpan.Clear();
-                        // #TODO: pass receiving radio model name.
-                        pipeline.ProcessSegments(srsSpan, fallback, null);
-                        MixInto(targetSpan, srsSpan);
-                        lastModulation = fallback[fallback.Count - 1].Modulation;
-                        // Fallback cancels AM drain so squelch tails do not bleed across modes.
-                        _openFreqDrainSamplesRemaining = 0;
-                    }
-
-                    // Final clip after combining buckets.
-                    AudioManipulationHelper.ClipArray(targetSpan);
-                    availableInBuffer += targetSpan.Length;
+                    QueueIncomingAudio(
+                        segments,
+                        longestSegmentLength,
+                        out openFreqAmOnly,
+                        out openFreqRxActive,
+                        out hasFallback);
 
                     // Drain newly queued audio.
                     monoOffset += ReadMixBuffer(monoBuffer, monoOffset, monoBufferLength - monoOffset);
@@ -265,24 +188,7 @@ public class RadioMixingProvider : ISampleProvider
                             Constants.OUTPUT_SEGMENT_FRAMES,
                             _openFreqDrainSamplesRemaining);
 
-                    var totalSize = availableInBuffer + drainFrames;
-                    if (mixBuffer == null || mixBuffer.Length < totalSize)
-                    {
-                        Array.Resize(ref mixBuffer, totalSize);
-                    }
-
-                    var targetSpan = mixBuffer.AsSpan(availableInBuffer, drainFrames);
-                    targetSpan.Clear();
-                    openFreqPipeline.ProcessDrain(targetSpan);
-                    AudioManipulationHelper.ClipArray(targetSpan);
-                    AudioManipulationHelper.ApplyLinearGain(targetSpan, _openFreqRadioVolume);
-                    availableInBuffer += targetSpan.Length;
-                    _openFreqDrainSamplesRemaining = Math.Max(
-                        0,
-                        _openFreqDrainSamplesRemaining - targetSpan.Length);
-                    openFreqRxActive = openFreqPipeline.WasSquelchOpen
-                                       || _openFreqDrainSamplesRemaining > 0;
-                    lastModulation = Modulation.AM;
+                    openFreqRxActive = QueueOpenFreqDrain(drainFrames);
 
                     monoOffset += ReadMixBuffer(monoBuffer, monoOffset, monoBufferLength - monoOffset);
                 }
@@ -382,6 +288,138 @@ public class RadioMixingProvider : ISampleProvider
         }
     }
 
+    internal void SetReceiverEffectsEngine(ReceiverEffectsEngine engine)
+    {
+        if (_receiverEffectsEngine == engine)
+            return;
+
+        _receiverEffectsEngine = engine;
+        openFreqPipeline.Reset();
+        _openFreqDrainSamplesRemaining = 0;
+        _openFreqRadioVolume = 1f;
+        _radioToneVolume = 1f;
+    }
+
+    internal void QueueIncomingAudio(
+        IReadOnlyList<TransmissionSegment> segments,
+        int longestSegmentLength,
+        out bool openFreqAmOnly,
+        out bool openFreqRxActive,
+        out bool hasFallback)
+    {
+        if (segments == null || segments.Count == 0)
+            throw new ArgumentException("At least one transmission segment is required.", nameof(segments));
+        if (longestSegmentLength <= 0)
+            throw new ArgumentOutOfRangeException(nameof(longestSegmentLength));
+
+        var totalSize = availableInBuffer + longestSegmentLength;
+        if (mixBuffer == null || mixBuffer.Length < totalSize)
+            Array.Resize(ref mixBuffer, totalSize);
+
+        var targetSpan = mixBuffer.AsSpan(availableInBuffer, longestSegmentLength);
+        targetSpan.Clear();
+        _radioToneVolume = segments[0].Volume;
+
+        IReadOnlyList<TransmissionSegment> openFreqAm = null;
+        IReadOnlyList<TransmissionSegment> fallback;
+        if (_receiverEffectsEngine == ReceiverEffectsEngine.OpenFreq)
+        {
+            var openFreqSegments = new List<TransmissionSegment>(segments.Count);
+            var fallbackSegments = new List<TransmissionSegment>(segments.Count);
+            foreach (var segment in segments)
+            {
+                if (OpenFreqReceiverEffectsPipeline.IsEligibleOpenFreqAm(segment))
+                    openFreqSegments.Add(segment);
+                else
+                    fallbackSegments.Add(segment);
+            }
+
+            openFreqAm = openFreqSegments;
+            fallback = fallbackSegments;
+        }
+        else
+        {
+            fallback = segments;
+        }
+
+        hasFallback = fallback.Count > 0;
+        var hasOpenFreqAm = openFreqAm is { Count: > 0 };
+        openFreqAmOnly = hasOpenFreqAm && !hasFallback;
+        openFreqRxActive = false;
+
+        if (hasOpenFreqAm)
+        {
+            EnsureScratch(ref _openFreqScratch, longestSegmentLength);
+            var amSpan = _openFreqScratch.AsSpan(0, longestSegmentLength);
+            amSpan.Clear();
+            openFreqPipeline.ProcessSegments(amSpan, openFreqAm);
+            openFreqRxActive = openFreqPipeline.WasSquelchOpen;
+            _openFreqRadioVolume = openFreqAm[0].Volume;
+            AudioManipulationHelper.ClipArray(amSpan);
+            AudioManipulationHelper.ApplyLinearGain(amSpan, _openFreqRadioVolume);
+            MixInto(targetSpan, amSpan);
+
+            if (openFreqAmOnly)
+            {
+                _openFreqDrainSamplesRemaining =
+                    OpenFreqReceiverEffectsPipeline.DrainSampleCount(WaveFormat.SampleRate);
+                lastModulation = Modulation.AM;
+            }
+            else
+            {
+                _openFreqDrainSamplesRemaining = 0;
+            }
+        }
+        else
+        {
+            _openFreqDrainSamplesRemaining = 0;
+        }
+
+        if (hasFallback)
+        {
+            EnsureScratch(ref _srsScratch, longestSegmentLength);
+            var srsSpan = _srsScratch.AsSpan(0, longestSegmentLength);
+            srsSpan.Clear();
+            // #TODO: pass receiving radio model name.
+            pipeline.ProcessSegments(srsSpan, fallback, null);
+            MixInto(targetSpan, srsSpan);
+            lastModulation = fallback[fallback.Count - 1].Modulation;
+            _openFreqDrainSamplesRemaining = 0;
+        }
+
+        AudioManipulationHelper.ClipArray(targetSpan);
+        CommitProcessedAudio(targetSpan);
+        availableInBuffer += targetSpan.Length;
+    }
+
+    internal bool QueueOpenFreqDrain(int drainFrames)
+    {
+        drainFrames = Math.Min(drainFrames, _openFreqDrainSamplesRemaining);
+        if (drainFrames <= 0 || _receiverEffectsEngine != ReceiverEffectsEngine.OpenFreq)
+            return false;
+
+        var totalSize = availableInBuffer + drainFrames;
+        if (mixBuffer == null || mixBuffer.Length < totalSize)
+            Array.Resize(ref mixBuffer, totalSize);
+
+        var targetSpan = mixBuffer.AsSpan(availableInBuffer, drainFrames);
+        targetSpan.Clear();
+        openFreqPipeline.ProcessDrain(targetSpan);
+        AudioManipulationHelper.ClipArray(targetSpan);
+        AudioManipulationHelper.ApplyLinearGain(targetSpan, _openFreqRadioVolume);
+        CommitProcessedAudio(targetSpan);
+        availableInBuffer += targetSpan.Length;
+        _openFreqDrainSamplesRemaining -= targetSpan.Length;
+        lastModulation = Modulation.AM;
+
+        return openFreqPipeline.WasSquelchOpen || _openFreqDrainSamplesRemaining > 0;
+    }
+
+    internal int ReadQueuedAudio(float[] buffer)
+    {
+        return ReadMixBuffer(buffer, 0, buffer.Length);
+    }
+
     private static void EnsureScratch(ref float[] scratch, int length)
     {
         if (scratch == null || scratch.Length < length)
@@ -393,6 +431,14 @@ public class RadioMixingProvider : ISampleProvider
         var n = Math.Min(target.Length, source.Length);
         for (var i = 0; i < n; i++)
             target[i] += source[i];
+    }
+
+    /// <summary>
+    /// Send the exact finalized mono receive samples queued for playback to the recording sink.
+    /// </summary>
+    internal void CommitProcessedAudio(Span<float> processedAudio)
+    {
+        _recordingTap.Append(processedAudio);
     }
 
     private void WriteEffectScaled(float[] samples, float volume)

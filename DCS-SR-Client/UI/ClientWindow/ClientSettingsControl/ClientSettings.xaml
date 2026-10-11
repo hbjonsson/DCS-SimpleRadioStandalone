@@ -423,61 +423,47 @@
                                 <RowDefinition />
                                 <RowDefinition />
                                 <RowDefinition />
-                                <RowDefinition />
-                                <RowDefinition />
-                                <RowDefinition />
                             </Grid.RowDefinitions>
                             <Label Grid.Row="0"
-                                   Grid.Column="0"
-                                   HorizontalContentAlignment="Center"
-                                   VerticalContentAlignment="Center"
-                                   Content="{x:Static p:Resources.AllowTransmissionsRecord}" />
-
-                            <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="0"
-                                Grid.Column="1"
-                                ToggleValue="{Binding AllowTransmissionsRecording, Mode=TwoWay}" />
-
-                            <Label Grid.Row="1"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.RecordTransmissions}" />
 
                             <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="1"
+                                Grid.Row="0"
                                 Grid.Column="1"
                                 ToggleValue="{Binding RecordTransmissions, Mode=TwoWay}" />
 
-                            <Label Grid.Row="2"
+                            <Label Grid.Row="1"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.SingleFileMixdown}" />
 
                             <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="2"
+                                Grid.Row="1"
                                 Grid.Column="1"
                                 ToggleValue="{Binding SingleFileMixdown, Mode=TwoWay}" />
-                            <Label Grid.Row="3"
+                            <Label Grid.Row="2"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.RecordingFormat}" />
                             <ComboBox x:Name="RecordingFormat"
-                                   Grid.Row="3"
+                                   Grid.Row="2"
                                    Grid.Column="1"
                                    Width="215"
                                    HorizontalAlignment="Center"
                                    VerticalAlignment="Top"
                                    ItemsSource="{Binding RecordingFormats}"
                                    SelectedItem="{Binding SelectedRecordingFormat, Mode=TwoWay}" />     
-                            <Label Grid.Row="4"
+                            <Label Grid.Row="3"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.RecordingQuality}" />
-                            <StackPanel Grid.Row="4"
+                            <StackPanel Grid.Row="3"
                                         Grid.Column="1" Margin="10">
 
                                 <Slider x:Name="RecordingQuality"
@@ -508,12 +494,12 @@
                                 </Grid>
                             </StackPanel>
 
-                            <Label Grid.Row="5"
+                            <Label Grid.Row="4"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.RecordingsFolder}" />
-                            <StackPanel Grid.Row="5"
+                            <StackPanel Grid.Row="4"
                                         Grid.Column="1"
                                         Margin="10"
                                         Orientation="Vertical">
@@ -533,16 +519,6 @@
                                 </StackPanel>
                             </StackPanel>
 
-                            <Label Grid.Row="6"
-                                   Grid.Column="0"
-                                   HorizontalContentAlignment="Center"
-                                   VerticalContentAlignment="Center"
-                                   Content="{x:Static p:Resources.DisallowedAudioTone}" />
-
-                            <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="6"
-                                Grid.Column="1"
-                                ToggleValue="{Binding DisallowedAudioTone, Mode=TwoWay}" />
                         </Grid>
                     </GroupBox>
                     <GroupBox Header="{x:Static p:Resources.MiscellanousHeader}">

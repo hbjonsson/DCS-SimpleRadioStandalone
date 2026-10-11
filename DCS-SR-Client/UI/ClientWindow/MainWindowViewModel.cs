@@ -831,8 +831,7 @@ public class MainWindowViewModel : PropertyChangedBaseClass, IHandle<TCPClientSt
             new SRClientBase
             {
                 LatLngPosition = new LatLngPosition(),
-                AllowRecord =
-                    GlobalSettingsStore.Instance.GetClientSettingBool(GlobalSettingsKeys.AllowRecording),
+                AllowRecord = true,
                 ClientGuid = ClientStateSingleton.Instance.ShortGUID,
                 Coalition = 0,
                 Name = ClientStateSingleton.Instance.LastSeenName,

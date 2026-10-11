@@ -77,6 +77,30 @@ public class CircularFloatBuffer
     }
 
     /// <summary>
+    ///     Write data to the buffer without requiring an intermediate array.
+    /// </summary>
+    public int Write(ReadOnlySpan<float> data)
+    {
+        lock (lockObject)
+        {
+            var count = Math.Min(data.Length, buffer.Length - byteCount);
+            var writeToEnd = Math.Min(buffer.Length - writePosition, count);
+            data[..writeToEnd].CopyTo(buffer.AsSpan(writePosition, writeToEnd));
+            writePosition = (writePosition + writeToEnd) % buffer.Length;
+
+            if (writeToEnd < count)
+            {
+                var remaining = count - writeToEnd;
+                data.Slice(writeToEnd, remaining).CopyTo(buffer.AsSpan(writePosition, remaining));
+                writePosition += remaining;
+            }
+
+            byteCount += count;
+            return count;
+        }
+    }
+
+    /// <summary>
     ///     Read from the buffer
     /// </summary>
     /// <param name="data">Buffer to read into</param>

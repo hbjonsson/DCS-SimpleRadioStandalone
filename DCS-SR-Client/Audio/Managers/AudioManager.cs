@@ -290,7 +290,7 @@ public class AudioManager : IHandle<SRClientUpdateMessage>
 
         try
         {
-            AudioRecordingManager.Instance.Start(ClientStateSingleton.Instance.ShortGUID);
+            AudioRecordingManager.Instance.Start();
         }
         catch (Exception ex)
         {

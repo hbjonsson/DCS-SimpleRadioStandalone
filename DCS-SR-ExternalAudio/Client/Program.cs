@@ -175,10 +175,6 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.ExternalAudioClient.Client
                 Required = false, Default = 0.0)]
             public double Altitude { get; set; }
 
-            [Option('R', "Record",
-                HelpText = "Allow audio sent by ExternalAudio to be recorded by clients",
-                Required = false, Default = true)]
-            public bool Record { get; set; }
             // //
             // // [Option( "IP",
             // //     HelpText = "",

@@ -126,9 +126,6 @@
   <data name="AllowRotaryIncrement" xml:space="preserve">
     <value>Rotary Style Frequency Increment/Decrement</value>
   </data>
-  <data name="AllowTransmissionsRecord" xml:space="preserve">
-    <value>Allow Transmissions To Be Recorded</value>
-  </data>
   <data name="AllowXInputController" xml:space="preserve">
     <value>Allow XInput Controller (Xbox controller)</value>
   </data>
@@ -254,9 +251,6 @@
   </data>
   <data name="DeviceSet" xml:space="preserve">
     <value>Set</value>
-  </data>
-  <data name="DisallowedAudioTone" xml:space="preserve">
-    <value>Record Tone for Disallowed Audio</value>
   </data>
   <data name="DisconnectExternalAWACSMode" xml:space="preserve">
     <value>Disconnect External AWACS MODE (EAM)</value>

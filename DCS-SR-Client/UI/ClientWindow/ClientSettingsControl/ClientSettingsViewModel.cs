@@ -297,16 +297,6 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         }
     }
 
-    public bool DisallowedAudioTone
-    {
-        get => _globalSettings.GetClientSettingBool(GlobalSettingsKeys.DisallowedAudioTone);
-        set
-        {
-            _globalSettings.SetClientSetting(GlobalSettingsKeys.DisallowedAudioTone, value);
-            NotifyPropertyChanged();
-        }
-    }
-
     public bool DisableExpansionRadios
     {
         get => _globalSettings.ProfileSettingsStore.GetClientSettingBool(
@@ -396,16 +386,6 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         set
         {
             _globalSettings.SetClientSetting(GlobalSettingsKeys.VOXMinimumDB, value);
-            NotifyPropertyChanged();
-        }
-    }
-
-    public bool AllowTransmissionsRecording
-    {
-        get => _globalSettings.GetClientSettingBool(GlobalSettingsKeys.AllowRecording);
-        set
-        {
-            _globalSettings.SetClientSetting(GlobalSettingsKeys.AllowRecording, value);
             NotifyPropertyChanged();
         }
     }
@@ -1249,7 +1229,6 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         NotifyPropertyChanged(nameof(VOXMode));
         NotifyPropertyChanged(nameof(VOXMinimumRMS));
 
-        NotifyPropertyChanged(nameof(AllowTransmissionsRecording));
         NotifyPropertyChanged(nameof(RecordTransmissions));
         NotifyPropertyChanged(nameof(SingleFileMixdown));
         NotifyPropertyChanged(nameof(RecordingQuality));
