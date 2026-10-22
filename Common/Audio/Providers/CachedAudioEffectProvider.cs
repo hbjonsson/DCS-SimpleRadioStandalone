@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Settings;
 
@@ -112,15 +111,14 @@ public class CachedAudioEffectProvider
 
     public void LoadEffects()
     {
-        //init lists
-        RadioTransmissionStart = new List<CachedAudioEffect>();
-        RadioTransmissionEnd = new List<CachedAudioEffect>();
-
-        IntercomTransmissionStart = new List<CachedAudioEffect>();
-        IntercomTransmissionEnd = new List<CachedAudioEffect>();
-
-        LoadRadioStartAndEndEffects();
-        LoadIntercomStartAndEndEffects();
+        // Build into locals and swap whole lists: audio threads read these while settings reload them.
+        var custom = GlobalSettingsStore.Instance.GetClientSetting(GlobalSettingsKeys.AudioEffectsFolder).RawValue;
+        var files = EffectFiles(custom?.Trim(), sourceFolder);
+        RadioTransmissionStart = LoadTransmissionEffects(files, CachedAudioEffect.AudioEffectTypes.RADIO_TRANS_START);
+        RadioTransmissionEnd = LoadTransmissionEffects(files, CachedAudioEffect.AudioEffectTypes.RADIO_TRANS_END);
+        IntercomTransmissionStart =
+            LoadTransmissionEffects(files, CachedAudioEffect.AudioEffectTypes.INTERCOM_TRANS_START);
+        IntercomTransmissionEnd = LoadTransmissionEffects(files, CachedAudioEffect.AudioEffectTypes.INTERCOM_TRANS_END);
 
         KY58EncryptionTransmitTone =
             new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.KY_58_TX, CachedEffectsLoader);
@@ -134,108 +132,46 @@ public class CachedAudioEffectProvider
         HAVEQUICKTone = new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.HAVEQUICK_TONE, CachedEffectsLoader);
     }
 
-    private void LoadRadioStartAndEndEffects()
+    /// <summary>
+    /// Effect files from each folder in order; an earlier folder's file wins over a same-named later one,
+    /// so the user's custom folder (kept across updates) overrides bundled sounds.
+    /// </summary>
+    internal static List<string> EffectFiles(params string[] folders)
     {
-        if (Directory.Exists(sourceFolder))
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var files = new List<string>();
+        foreach (var folder in folders)
         {
-            var audioEffectsList = Directory.EnumerateFiles(sourceFolder);
-
-            //might need to split the path - we'll see
-            foreach (var effectPath in audioEffectsList)
-            {
-                var effect = effectPath.Split(Path.DirectorySeparatorChar).Last();
-
-                if (effect.ToLowerInvariant().StartsWith(CachedAudioEffect.AudioEffectTypes.RADIO_TRANS_START
-                        .ToString().ToLowerInvariant()))
-                {
-                    var audioEffect = new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.RADIO_TRANS_START,
-                        effect, effectPath, CachedEffectsLoader);
-
-                    if (audioEffect.AudioEffectFloat != null) RadioTransmissionStart.Add(audioEffect);
-                }
-                else if (effect.ToLowerInvariant().StartsWith(CachedAudioEffect.AudioEffectTypes.RADIO_TRANS_END
-                             .ToString().ToLowerInvariant()))
-                {
-                    var audioEffect = new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.RADIO_TRANS_END,
-                        effect, effectPath, CachedEffectsLoader);
-
-                    if (audioEffect.AudioEffectFloat != null) RadioTransmissionEnd.Add(audioEffect);
-                }
-            }
-
-            //IF the audio folder is missing - to avoid a crash, init with a blank one
-            if (RadioTransmissionStart.Count == 0)
-                RadioTransmissionStart.Add(
-                    new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.RADIO_TRANS_START, CachedEffectsLoader));
-
-            if (RadioTransmissionEnd.Count == 0)
-                RadioTransmissionEnd.Add(new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.RADIO_TRANS_END,
-                    CachedEffectsLoader));
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+                continue;
+            foreach (var path in Directory.EnumerateFiles(folder))
+                if (seen.Add(Path.GetFileName(path)))
+                    files.Add(path);
         }
-        else
-        {
-            //IF the audio folder is missing - to avoid a crash, init with a blank one
-            if (RadioTransmissionStart.Count == 0)
-                RadioTransmissionStart.Add(
-                    new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.RADIO_TRANS_START, CachedEffectsLoader));
 
-            if (RadioTransmissionEnd.Count == 0)
-                RadioTransmissionEnd.Add(new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.RADIO_TRANS_END,
-                    CachedEffectsLoader));
-        }
+        return files;
     }
 
-    private void LoadIntercomStartAndEndEffects()
+    private List<CachedAudioEffect> LoadTransmissionEffects(List<string> files,
+        CachedAudioEffect.AudioEffectTypes type)
     {
-        if (Directory.Exists(sourceFolder))
+        var prefix = type.ToString().ToLowerInvariant();
+        var effects = new List<CachedAudioEffect>();
+        foreach (var effectPath in files)
         {
-            var audioEffectsList = Directory.EnumerateFiles(sourceFolder);
+            var effect = Path.GetFileName(effectPath);
+            if (!effect.ToLowerInvariant().StartsWith(prefix))
+                continue;
 
-            //might need to split the path - we'll see
-            foreach (var effectPath in audioEffectsList)
-            {
-                var effect = effectPath.Split(Path.DirectorySeparatorChar).Last();
-
-                if (effect.ToLowerInvariant().StartsWith(CachedAudioEffect.AudioEffectTypes.INTERCOM_TRANS_START
-                        .ToString().ToLowerInvariant()))
-                {
-                    var audioEffect = new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.INTERCOM_TRANS_START,
-                        effect, effectPath, CachedEffectsLoader);
-
-                    if (audioEffect.AudioEffectFloat != null) IntercomTransmissionStart.Add(audioEffect);
-                }
-                else if (effect.ToLowerInvariant().StartsWith(CachedAudioEffect.AudioEffectTypes.INTERCOM_TRANS_END
-                             .ToString().ToLowerInvariant()))
-                {
-                    var audioEffect = new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.INTERCOM_TRANS_END,
-                        effect, effectPath, CachedEffectsLoader);
-
-                    if (audioEffect.AudioEffectFloat != null) IntercomTransmissionEnd.Add(audioEffect);
-                }
-            }
-
-            //IF the audio folder is missing - to avoid a crash, init with a blank one
-            if (IntercomTransmissionStart.Count == 0)
-                IntercomTransmissionStart.Add(
-                    new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.INTERCOM_TRANS_START,
-                        CachedEffectsLoader));
-
-            if (IntercomTransmissionEnd.Count == 0)
-                IntercomTransmissionEnd.Add(
-                    new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.INTERCOM_TRANS_END, CachedEffectsLoader));
+            var audioEffect = new CachedAudioEffect(type, effect, effectPath, CachedEffectsLoader);
+            if (audioEffect.AudioEffectFloat != null) effects.Add(audioEffect);
         }
-        else
-        {
-            //IF the audio folder is missing - to avoid a crash, init with a blank one
-            if (IntercomTransmissionStart.Count == 0)
-                IntercomTransmissionStart.Add(
-                    new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.INTERCOM_TRANS_START,
-                        CachedEffectsLoader));
 
-            if (IntercomTransmissionEnd.Count == 0)
-                IntercomTransmissionEnd.Add(
-                    new CachedAudioEffect(CachedAudioEffect.AudioEffectTypes.INTERCOM_TRANS_END, CachedEffectsLoader));
-        }
+        //IF the audio folder is missing - to avoid a crash, init with a blank one
+        if (effects.Count == 0)
+            effects.Add(new CachedAudioEffect(type, CachedEffectsLoader));
+
+        return effects;
     }
 
     //TODO unload ever?

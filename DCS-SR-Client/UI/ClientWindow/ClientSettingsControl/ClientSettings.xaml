@@ -1001,6 +1001,7 @@
                                 <RowDefinition />
                                 <RowDefinition />
                                 <RowDefinition />
+                                <RowDefinition />
                             </Grid.RowDefinitions>
 
 
@@ -1297,6 +1298,32 @@
                                 Grid.Row="19"
                                 Grid.Column="1"
                                 VolumeValue="{Binding AmbientEffectVolume,Mode=TwoWay}" />
+
+                            <Label Grid.Row="20"
+                                   Grid.Column="0"
+                                   HorizontalContentAlignment="Center"
+                                   VerticalContentAlignment="Center"
+                                   Content="{x:Static p:Resources.AudioEffectsFolder}"
+                                   ToolTip="{x:Static p:Resources.AudioEffectsFolderTooltip}" />
+                            <StackPanel Grid.Row="20"
+                                        Grid.Column="1"
+                                        Margin="10"
+                                        Orientation="Vertical"
+                                        ToolTip="{x:Static p:Resources.AudioEffectsFolderTooltip}">
+                                <Label Content="{Binding AudioEffectsFolderDisplay}"
+                                       HorizontalAlignment="Center"
+                                       HorizontalContentAlignment="Center" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <Button Content="{x:Static p:Resources.RecordingsFolderBrowse}"
+                                            Command="{Binding BrowseAudioEffectsFolderCommand}"
+                                            Margin="0,0,6,0" />
+                                    <Button Content="{x:Static p:Resources.RecordingsFolderReset}"
+                                            Command="{Binding ResetAudioEffectsFolderCommand}"
+                                            Margin="0,0,6,0" />
+                                    <Button Content="{x:Static p:Resources.RecordingsFolderOpen}"
+                                            Command="{Binding OpenAudioEffectsFolderCommand}" />
+                                </StackPanel>
+                            </StackPanel>
 
                         </Grid>
                     </GroupBox>

@@ -2665,6 +2665,24 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Client.Properties {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Custom Sounds Folder.
+        /// </summary>
+        public static string AudioEffectsFolder {
+            get {
+                return ResourceManager.GetString("AudioEffectsFolder", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Your own RADIO_TRANS_START/END and INTERCOM_TRANS_START/END .wav files.
+        /// </summary>
+        public static string AudioEffectsFolderTooltip {
+            get {
+                return ResourceManager.GetString("AudioEffectsFolderTooltip", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Recordings Folder.
         /// </summary>
         public static string RecordingsFolder {

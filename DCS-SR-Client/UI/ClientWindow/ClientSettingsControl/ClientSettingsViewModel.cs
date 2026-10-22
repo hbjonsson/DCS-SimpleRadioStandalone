@@ -144,6 +144,36 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
             NotifyPropertyChanged(nameof(RecordingsFolderPath));
         });
 
+        BrowseAudioEffectsFolderCommand = new DelegateCommand(() =>
+        {
+            using var dialog = new System.Windows.Forms.FolderBrowserDialog
+            {
+                SelectedPath = AudioEffectsFolderPath,
+                Description = Resources.AudioEffectsFolder
+            };
+            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                SetAudioEffectsFolder(dialog.SelectedPath);
+        });
+
+        ResetAudioEffectsFolderCommand = new DelegateCommand(() => SetAudioEffectsFolder(string.Empty));
+
+        OpenAudioEffectsFolderCommand = new DelegateCommand(() =>
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{AudioEffectsFolderPath}\"",
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex, "Unable to open sounds folder");
+            }
+        });
+
         OpenRecordingsFolderCommand = new DelegateCommand(() =>
         {
             try
@@ -208,6 +238,9 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
     public ICommand BrowseRecordingsFolderCommand { get; set; }
     public ICommand ResetRecordingsFolderCommand { get; set; }
     public ICommand OpenRecordingsFolderCommand { get; set; }
+    public ICommand BrowseAudioEffectsFolderCommand { get; set; }
+    public ICommand ResetAudioEffectsFolderCommand { get; set; }
+    public ICommand OpenAudioEffectsFolderCommand { get; set; }
 
     /**
          * Global Settings
@@ -443,6 +476,34 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
                 return "(default)";
             return Path.GetFileName(custom.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         }
+    }
+
+    private string CustomAudioEffectsFolder =>
+        _globalSettings.GetClientSetting(GlobalSettingsKeys.AudioEffectsFolder).RawValue?.Trim();
+
+    // Open falls back to the bundled folder so users can see the file names to copy.
+    public string AudioEffectsFolderPath => string.IsNullOrEmpty(CustomAudioEffectsFolder)
+        ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AudioEffects")
+        : CustomAudioEffectsFolder;
+
+    public string AudioEffectsFolderDisplay => string.IsNullOrEmpty(CustomAudioEffectsFolder)
+        ? "(default)"
+        : Path.GetFileName(CustomAudioEffectsFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+    private void SetAudioEffectsFolder(string folder)
+    {
+        _globalSettings.SetClientSetting(GlobalSettingsKeys.AudioEffectsFolder, folder, true);
+        CachedAudioEffectProvider.Instance.LoadEffects();
+        NotifyPropertyChanged(nameof(AudioEffectsFolderDisplay));
+        NotifyPropertyChanged(nameof(AudioEffectsFolderPath));
+        NotifyPropertyChanged(nameof(RadioTransmissionStart));
+        NotifyPropertyChanged(nameof(RadioTransmissionEnd));
+        NotifyPropertyChanged(nameof(IntercomTransmissionStart));
+        NotifyPropertyChanged(nameof(IntercomTransmissionEnd));
+        NotifyPropertyChanged(nameof(SelectedRadioTransmissionStartEffect));
+        NotifyPropertyChanged(nameof(SelectedRadioTransmissionEndEffect));
+        NotifyPropertyChanged(nameof(SelectedIntercomStartTransmitEffect));
+        NotifyPropertyChanged(nameof(SelectedIntercomEndTransmitEffect));
     }
 
     public bool AutoSelectInputProfile

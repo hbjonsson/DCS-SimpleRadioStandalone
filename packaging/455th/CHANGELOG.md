@@ -1,5 +1,21 @@
 # 455th vAEW SRS Changelog
 
+## 2.4.1.0+6
+
+### Enhancements
+- **More realistic OpenFreq AM radio sound, tuned to the AN/ARC-210 specification (MIL-R-29583).** Each transmitting station now has automatic level control and a soft speech clipper, so every voice is driven to about 85% modulation regardless of mic level. Loud syllables pick up the characteristic radio grit, and quiet and loud talkers come out at similar levels.
+- **Receiver passband matches the ARC-210 spec.** A steeper 7th-order high-pass gives the thinner, bass-cut radio voice (150 Hz now at least 37 dB down).
+- **Custom sounds folder for mic clicks.** Settings → Custom Sounds Folder lets you keep your own `RADIO_TRANS_START/END` and `INTERCOM_TRANS_START/END` .wav files (48 kHz, 16-bit, mono) outside the install folder, so updates no longer overwrite them. A file with the same name as a bundled sound replaces it.
+
+### Fixes
+- **EAM: VHF radios can now select ENC and fill.** Previously only the UHF and FM radios in External AWACS Mode offered encryption.
+- Reloading sound effects can no longer briefly leave the effect lists empty while audio is playing.
+
+### Install notes
+- Use the MSI for in-place upgrade into `Program Files\455th-SRS\Client`.
+- ZIP remains available as a portable fallback.
+- Based on upstream SRS **2.4.1.0**.
+
 ## 2.4.1.0+5
 
 ### Fixes

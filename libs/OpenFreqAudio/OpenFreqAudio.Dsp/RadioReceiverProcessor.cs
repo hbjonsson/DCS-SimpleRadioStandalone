@@ -1,4 +1,6 @@
+using NWaves.Filters.Base;
 using NWaves.Filters.Butterworth;
+using NWaves.Filters.Fda;
 
 namespace OpenFreqAudio;
 
@@ -6,7 +8,7 @@ namespace OpenFreqAudio;
 /// Stateful AM receiver DSP shared by OpenFreq playback and SRS.
 ///
 /// Per buffer: background noise + AM envelope detection (multi-TX IQ sum) +
-/// AGC + per-sample squelch + 300–3000 Hz band-pass.
+/// AGC + per-sample squelch + 300–3000 Hz band-pass (AN/ARC-210, MIL-R-29583 3.5.1.15.4.5.1).
 ///
 /// One instance per receiving radio/slot. Not thread-safe — call from a single
 /// audio thread and keep the instance alive across buffers so AGC/filters/noise
@@ -31,7 +33,7 @@ public sealed class RadioReceiverProcessor
 
     private readonly int _sampleRate;
     private readonly AttackDecayFilter _agc;
-    private readonly HighPassFilter _highPass;
+    private readonly FilterChain _highPass;
     private readonly LowPassFilter _lowPass;
     private BackgroundNoiseGenerator _noise;
     private int _frequencyKhz;
@@ -58,7 +60,9 @@ public sealed class RadioReceiverProcessor
         _sampleRate = sampleRate;
         _frequencyKhz = frequencyKhz > 0 ? frequencyKhz : 125000;
         _agc = AttackDecayFilter.MakeAttackDecayFilter(AgcAttack, AgcDecay, sampleRate);
-        _highPass = new HighPassFilter(300.0 / sampleRate, 3);
+        // 7th order at 290 Hz meets the ARC-210 spec (300 Hz within -3 dB, >=37 dB down at 150 Hz); split into biquads because
+        // a single 7th-order transfer function at 300 Hz / 48 kHz is numerically unstable.
+        _highPass = new FilterChain(DesignFilter.TfToSos(new HighPassFilter(290.0 / sampleRate, 7).Tf));
         _lowPass = new LowPassFilter(3000.0 / sampleRate, 6);
         _noise = new BackgroundNoiseGenerator(sampleRate, _frequencyKhz);
     }

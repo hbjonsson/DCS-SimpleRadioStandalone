@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Recording;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Settings;
 using NLog;
@@ -37,6 +38,15 @@ public sealed class OpenFreqReceiverEffectsPipeline
     private int _deepFadeInitialSamples;
 
     private readonly Dictionary<string, float> _ppmByGuid = new(StringComparer.Ordinal);
+
+    // Transmitter ALC + speech clipper (AN/ARC-210, MIL-R-29583 3.5.1.16.8.2): every sender is
+    // driven to ~80% AM regardless of mic level, so loud syllables clip softly — the radio grit.
+    internal const float AlcTarget = 0.95f; // peak-follower target; a steady tone lands at ~85% AM
+    private const float AlcMaxGain = 10f; // +20 dB, so pauses don't pump mic noise up
+    private const float ClipperKnee = 0.6f;
+    // Hotter modulation makes the detected voice ~12 dB louder; trim back to the old listening level.
+    internal const float OutputTrim = 0.25f;
+    private readonly Dictionary<string, AttackDecayFilter> _alcByGuid = new(StringComparer.Ordinal);
 
     public OpenFreqReceiverEffectsPipeline(int radioId, int sampleRate)
     {
@@ -80,6 +90,7 @@ public sealed class OpenFreqReceiverEffectsPipeline
         {
             var seg = segments[i];
             var samples = (float[])seg.Audio.Clone();
+            ApplyTransmitterAlc(samples, seg.OriginalClientGuid ?? seg.ClientGuid);
             var snrDb = EstimateSnrDb(seg);
             var carrierScale = ApplyEventFading(samples, snrDb);
 
@@ -95,6 +106,7 @@ public sealed class OpenFreqReceiverEffectsPipeline
         try
         {
             _processor.Process(audioOut, inputs);
+            AudioManipulationHelper.ApplyLinearGain(audioOut, OutputTrim);
         }
         catch (Exception e)
         {
@@ -120,6 +132,7 @@ public sealed class OpenFreqReceiverEffectsPipeline
         try
         {
             _processor.Process(audioOut, Array.Empty<RadioReceiverInput>());
+            AudioManipulationHelper.ApplyLinearGain(audioOut, OutputTrim);
         }
         catch (Exception e)
         {
@@ -143,6 +156,7 @@ public sealed class OpenFreqReceiverEffectsPipeline
         _deepFadeFadeSamples = 0;
         _deepFadeInitialSamples = 0;
         _ppmByGuid.Clear();
+        _alcByGuid.Clear();
     }
 
     /// <summary>
@@ -240,6 +254,35 @@ public sealed class OpenFreqReceiverEffectsPipeline
         var crystalOffset = (float)(freqHz * (ppm * 1e-6));
         var dialOffset = (float)(freqHz - tunedHz);
         return crystalOffset + dialOffset;
+    }
+
+    internal void ApplyTransmitterAlc(Span<float> samples, string guid)
+    {
+        guid ??= "unknown";
+        if (!_alcByGuid.TryGetValue(guid, out var envelope))
+        {
+            // Fast attack catches the first syllable; slow release holds gain through words.
+            envelope = AttackDecayFilter.MakeAttackDecayFilter(0.02, 1.0, _sampleRate);
+            envelope.D1 = AlcTarget / AlcMaxGain; // start at full gain so quiet senders are heard at once
+            _alcByGuid[guid] = envelope;
+        }
+
+        for (var i = 0; i < samples.Length; i++)
+        {
+            var level = envelope.Apply(MathF.Abs(samples[i]));
+            var gain = Math.Min(AlcMaxGain, AlcTarget / Math.Max(level, 1e-6f));
+            samples[i] = SoftClip(samples[i] * gain);
+        }
+    }
+
+    /// <summary>Linear below the knee, tanh above it; never exceeds ±1 (100% modulation).</summary>
+    internal static float SoftClip(float x)
+    {
+        var a = MathF.Abs(x);
+        if (a <= ClipperKnee)
+            return x;
+        var range = 1f - ClipperKnee;
+        return MathF.CopySign(ClipperKnee + range * MathF.Tanh((a - ClipperKnee) / range), x);
     }
 
     private float GetStablePpm(string guid)

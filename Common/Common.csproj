@@ -13,7 +13,7 @@
         <Company>Ciribob - GitHub.com/Ciribob</Company>
         <AssemblyVersion>2.4.1.0</AssemblyVersion>
         <FileVersion>2.4.1.0</FileVersion>
-        <InformationalVersion>2.4.1.0+5</InformationalVersion>
+        <InformationalVersion>2.4.1.0+6</InformationalVersion>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
         <OutputPath>bin\x64\Debug\</OutputPath>
@@ -48,7 +48,7 @@
         <PackageReference Include="SharpOpenNat" Version="4.0.17" />
     </ItemGroup>
     <ItemGroup>
-        <!-- BASS-free OpenFreq receiver DSP. Prefer libs/OpenFreqAudio submodule when present. -->
+        <!-- BASS-free OpenFreq receiver DSP, vendored from OpenFreq and owned by this fork. -->
         <ProjectReference Include="..\libs\OpenFreqAudio\OpenFreqAudio.Dsp\OpenFreqAudio.Dsp.csproj" />
     </ItemGroup>
     <ItemGroup>

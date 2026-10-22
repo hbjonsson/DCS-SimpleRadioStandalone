@@ -1237,6 +1237,12 @@ Requires Tx or Rx Effects On</value>
   <data name="RecordingsFolder" xml:space="preserve">
     <value>Recordings Folder</value>
   </data>
+  <data name="AudioEffectsFolder" xml:space="preserve">
+    <value>Custom Sounds Folder</value>
+  </data>
+  <data name="AudioEffectsFolderTooltip" xml:space="preserve">
+    <value>Your own RADIO_TRANS_START/END and INTERCOM_TRANS_START/END .wav files (48 kHz, 16-bit, mono). Kept across updates; a file with the same name as a bundled sound replaces it.</value>
+  </data>
   <data name="RecordingsFolderBrowse" xml:space="preserve">
     <value>Browse...</value>
   </data>

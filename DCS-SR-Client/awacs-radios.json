@@ -109,8 +109,8 @@
   },
   {
     "enc": false,
-    "encKey": 0,
-    "encMode": 0,
+    "encKey": 1,
+    "encMode": 1,
     "freqMax": 400000000.0,
     "freqMin": 1000000.0,
     "freq": 124800000.0,
@@ -127,8 +127,8 @@
   },
   {
     "enc": false,
-    "encKey": 0,
-    "encMode": 0,
+    "encKey": 1,
+    "encMode": 1,
     "freqMax": 400000000.0,
     "freqMin": 1000000.0,
     "freq": 124800000.0,
@@ -163,8 +163,8 @@
   },
   {
     "enc": false,
-    "encKey": 0,
-    "encMode": 0,
+    "encKey": 1,
+    "encMode": 1,
     "freqMax": 400000000.0,
     "freqMin": 1000000.0,
     "freq": 124800000.0,
@@ -181,8 +181,8 @@
   },
   {
     "enc": false,
-    "encKey": 0,
-    "encMode": 0,
+    "encKey": 1,
+    "encMode": 1,
     "freqMax": 400000000.0,
     "freqMin": 1000000.0,
     "freq": 124800000.0,
