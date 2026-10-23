@@ -16,14 +16,17 @@ Prefer the MSI for in-place upgrades into `Program Files\455th-SRS\Client`. A ZI
 
 Based on upstream SRS **2.4.1.0**, with fork iterations published as `2.4.1.0+N`. Full cockpit / FC3 integration from SRS is retained.
 
-### Radio audio (OpenFreq + 455th work)
+### Radio audio: a receiver simulation, not an EQ
 
-- **OpenFreq AM path by default** — clear AM runs through OpenFreq envelope / AGC / squelch / noise / band-pass instead of the stock SRS AM effects stack.
-- **Modulation-safe routing** — OpenFreq owns eligible clear AM only. FM, SINCGARS, HaveQuick, MIDS, SATCOM, and intercom keep SRS filtering, tones, capture, and ambient rules. Mixed receive batches partition AM from non-AM so one foreign segment cannot knock all AM off OpenFreq.
-- **Natural squelch drain** — post-TX squelch tail stays on OpenFreq-AM-only activity; switching modes does not leave a wrong drain bleeding across.
-- **Working radio volume on OpenFreq AM** — overlay sliders and in-jet knobs apply after AGC/clip; RX/TX tones (including KY-58 / MIDS / intercom) follow the knob, including mute at zero.
-- **Strongest-signal FM capture** — FM / SINCGARS capture picks the lowest combined distance/LOS loss (HaveQuick stays outside FM capture).
-- **Hybrid cockpit ambience** — procedural ambience blended with WAV assets, with ground / stationary cases and event-driven flutter / deep-fade behaviour tuned for this client.
+Every radio is simulated as a real receiver, tuned to the AN/ARC-210 specification (MIL-R-29583) and checked by spec tests:
+
+- **AM / HAVEQUICK**: carriers, envelope detector, AGC and carrier squelch. Two stations at once give a heterodyne beat note.
+- **FM / SINCGARS**: FM discriminator with quieting, threshold clicks, capture by the stronger station and a noise squelch with its tail.
+- **Encrypted, MIDS, SATCOM**: 16 kbit/s CVSD digital voice that garbles near the edge of range.
+- **Intercom**: wired, wider band, no RF noise.
+- **Transmitter model**: each talker is levelled and soft-clipped to about 85% modulation, with cockpit noise kept about 17 dB under the voice.
+
+**Deep dive:** [How the 455th SRS radio simulation works](docs/radio-simulation.md) covers the design, the comparison with stock SRS and OpenFreq, the known gaps and the roadmap.
 
 ### Client reliability & recording
 
