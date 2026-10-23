@@ -14,6 +14,7 @@ using Ciribob.DCS.SimpleRadio.Standalone.Client.Network.DCS;
 using Ciribob.DCS.SimpleRadio.Standalone.Client.Properties;
 using Ciribob.DCS.SimpleRadio.Standalone.Client.UI.ClientWindow.ClientSettingsControl.Model;
 using Ciribob.DCS.SimpleRadio.Standalone.Client.UI.ClientWindow.RadioOverlayWindow.PresetChannels;
+using Ciribob.DCS.SimpleRadio.Standalone.Client.UI.UpdateWindow;
 using Ciribob.DCS.SimpleRadio.Standalone.Client.Utils;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers;
@@ -515,6 +516,19 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
             NotifyPropertyChanged();
         }
     }
+
+    public bool CheckForUpdates
+    {
+        get => _globalSettings.GetClientSettingBool(GlobalSettingsKeys.CheckForUpdates);
+        set
+        {
+            _globalSettings.SetClientSetting(GlobalSettingsKeys.CheckForUpdates, value);
+            NotifyPropertyChanged();
+        }
+    }
+
+    public ICommand CheckForUpdatesNowCommand { get; } =
+        new DelegateCommand(async () => await ForkUpdateManager.CheckAsync(userRequested: true));
 
     public bool CheckForBetaUpdates
     {
@@ -1141,6 +1155,7 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         NotifyPropertyChanged(nameof(RecordingsFolderPath));
 
         NotifyPropertyChanged(nameof(AutoSelectInputProfile));
+        NotifyPropertyChanged(nameof(CheckForUpdates));
         NotifyPropertyChanged(nameof(CheckForBetaUpdates));
         //SetSRSPathCommand
         NotifyPropertyChanged(nameof(RequireAdminToggle));

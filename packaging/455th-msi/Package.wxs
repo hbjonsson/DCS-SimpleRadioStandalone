@@ -64,6 +64,16 @@
         </File>
         <RemoveFolder Id="RemoveProgramMenuDirectory" Directory="ProgramMenuDirectory" On="uninstall" />
       </Component>
+      <!-- The client's auto-updater only installs over itself when it runs from this folder (ForkBranding.MsiClientFolder). -->
+      <Component Id="InstallLocationRegistry" Guid="*">
+        <RegistryValue
+            Root="HKLM"
+            Key="SOFTWARE\455th-SRS"
+            Name="ClientFolder"
+            Type="string"
+            Value="[ClientFolder]"
+            KeyPath="yes" />
+      </Component>
     </ComponentGroup>
   </Fragment>
 

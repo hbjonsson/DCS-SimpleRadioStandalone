@@ -314,11 +314,29 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Client.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Check for beta updates.
+        ///   Looks up a localized string similar to Include test (pre-release) versions.
         /// </summary>
         public static string CheckForBetaUpdates {
             get {
                 return ResourceManager.GetString("CheckForBetaUpdates", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Check for updates at startup.
+        /// </summary>
+        public static string CheckForUpdates {
+            get {
+                return ResourceManager.GetString("CheckForUpdates", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Check now.
+        /// </summary>
+        public static string CheckForUpdatesNow {
+            get {
+                return ResourceManager.GetString("CheckForUpdatesNow", resourceCulture);
             }
         }
         

@@ -66,6 +66,8 @@ public enum GlobalSettingsKeys
     LastSeenName,
 
     CheckForBetaUpdates,
+    CheckForUpdates, // 455th: offer new fork releases at startup
+    SkippedUpdateVersion, // 455th: release tag the user chose to skip
 
     AllowMultipleInstances, // Allow for more than one SRS instance to be ran simultaneously. Config-file only!
 
@@ -317,6 +319,8 @@ public class GlobalSettingsStore
         { GlobalSettingsKeys.LastSeenName.ToString(), "" },
 
         { GlobalSettingsKeys.CheckForBetaUpdates.ToString(), "false" },
+        { GlobalSettingsKeys.CheckForUpdates.ToString(), "true" },
+        { GlobalSettingsKeys.SkippedUpdateVersion.ToString(), string.Empty },
 
         { GlobalSettingsKeys.AllowMultipleInstances.ToString(), "false" },
 

@@ -1,0 +1,30 @@
+<controls:MetroWindow xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                      x:Class="Ciribob.DCS.SimpleRadio.Standalone.Client.UI.UpdateWindow.UpdateWindow"
+                      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                      xmlns:controls="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+                      Title="455th SRS update"
+                      WindowStartupLocation="CenterScreen"
+                      SizeToContent="Height"
+                      Width="520"
+                      ResizeMode="NoResize">
+    <StackPanel Margin="12">
+        <TextBlock Name="Headline" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" />
+        <TextBox Name="Notes" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                 MaxHeight="220" Margin="0,0,0,8" />
+        <TextBlock Name="DcsWarning" TextWrapping="Wrap" Foreground="Orange" Margin="0,0,0,8"
+                   Visibility="Collapsed"
+                   Text="DCS is running. The client will close for about 30 seconds while it updates, then start again by itself. You may need to reconnect." />
+        <TextBlock Name="PortableNote" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="Collapsed"
+                   Text="This copy wasn't installed with the 455th SRS installer, so it can't update itself. Download the new version from the release page." />
+        <ProgressBar Name="Progress" Height="14" Minimum="0" Maximum="1" Margin="0,0,0,4" Visibility="Collapsed" />
+        <TextBlock Name="Status" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="Collapsed" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Name="UpdateNow" Content="Update now" IsDefault="True" Margin="4" Padding="10,4"
+                    Click="UpdateNow_Click" />
+            <Button Name="OpenPage" Content="Open download page" Margin="4" Padding="10,4"
+                    Visibility="Collapsed" Click="OpenPage_Click" />
+            <Button Name="Later" Content="Later" IsCancel="True" Margin="4" Padding="10,4" Click="Later_Click" />
+            <Button Name="Skip" Content="Skip this version" Margin="4" Padding="10,4" Click="Skip_Click" />
+        </StackPanel>
+    </StackPanel>
+</controls:MetroWindow>

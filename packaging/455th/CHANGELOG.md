@@ -1,5 +1,29 @@
 # 455th vAEW SRS Changelog
 
+## 2.4.1.0+7
+
+### Enhancements
+- **Every radio now uses the OpenFreq receiver sound, not just AM.**
+  - **FM and SINCGARS** use a new FM receiver modelled on the AN/ARC-210 FM mode: hiss falls away on strong signals, weak signals get noisy and clicky, the stronger of two stations takes over, and there is a short burst of squelch noise when the other station unkeys.
+  - **Encrypted voice (KY-58), MIDS and SATCOM** use 16 kbit/s CVSD digital voice: a slightly grainy, robotic tone with no hiss. Encrypted radio garbles near the edge of range.
+  - **Intercom** is wired: wider and clearer than radio, with no static.
+- **Much louder radio audio.** Voice plays about 12 dB louder than in +6 at the same volume settings, and every kind of radio plays at the same level. A soft limiter replaces the hard clip at full volume, so overlapping radios and a high Speaker Boost duck briefly instead of crackling.
+- **Cockpit background stays under the voice.** Each talker's voice is levelled before their cockpit noise is added, so engine noise no longer swells to voice level between words. It now sits about 17 dB under the voice for every talker.
+- **Automatic updates.** At startup the client checks for a newer 455th release and offers Update now, Later or Skip this version. Update now downloads the installer, verifies it, installs it and restarts the client. Settings → "Check for updates at startup" turns this off, "Check now" checks on demand, and "Include test (pre-release) versions" opts into test builds. Portable ZIP copies get a link to the download page instead.
+
+### Fixes
+- **No more crack when a transmission starts.** Squelch opening no longer sends a burst over full scale into the audio.
+- **The mic passthrough output (used as a stream source) now carries the radio sound.** It used to play your plain microphone. Own-voice recordings now use the processed audio too.
+
+### Removed
+- The "Use OpenFreq Receive Effects" switch, and the settings the OpenFreq sound replaces: radio effects volume, per-radio-model effects, clipping, NATO tone, HAVEQUICK tone, background noise and noise gain. Players who prefer stock SRS sound can use the official SRS client; both still work together on the same servers.
+
+### Install notes
+- **Install this version manually once.** +6 and earlier cannot update themselves; from +7 on the client offers updates on its own.
+- Use the MSI for in-place upgrade into `Program Files\455th-SRS\Client`.
+- ZIP remains available as a portable fallback, but it cannot update itself.
+- Based on upstream SRS **2.4.1.0**.
+
 ## 2.4.1.0+6
 
 ### Enhancements

@@ -586,77 +586,95 @@
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
-                                   Content="{x:Static p:Resources.CheckForBetaUpdates}" />
+                                   Content="{x:Static p:Resources.CheckForUpdates}" />
 
-                            <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="1"
-                                Grid.Column="1"
-                                ToggleValue="{Binding CheckForBetaUpdates, Mode=TwoWay}" />
-
+                            <StackPanel Grid.Row="1"
+                                        Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        HorizontalAlignment="Center">
+                                <clientSettingsControl:SettingsToggleControl
+                                    ToggleValue="{Binding CheckForUpdates, Mode=TwoWay}" />
+                                <Button Content="{x:Static p:Resources.CheckForUpdatesNow}"
+                                        Command="{Binding CheckForUpdatesNowCommand}"
+                                        VerticalAlignment="Center"
+                                        Margin="6,0,0,0" />
+                            </StackPanel>
 
                             <Label Grid.Row="2"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
+                                   Content="{x:Static p:Resources.CheckForBetaUpdates}" />
+
+                            <clientSettingsControl:SettingsToggleControl
+                                Grid.Row="2"
+                                Grid.Column="1"
+                                ToggleValue="{Binding CheckForBetaUpdates, Mode=TwoWay}" />
+
+
+                            <Label Grid.Row="3"
+                                   Grid.Column="0"
+                                   HorizontalContentAlignment="Center"
+                                   VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.SetSRSPath}" />
 
-                            <Button Grid.Row="2"
+                            <Button Grid.Row="3"
                                     Grid.Column="1"
                                     Command="{Binding SetSRSPathCommand}"
                                     Content="{x:Static p:Resources.SetSRSPathBtn}" />
 
-                            <Label Grid.Row="3"
+                            <Label Grid.Row="4"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.RequireAdminToggle}" />
 
                             <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="3"
+                                Grid.Row="4"
                                 Grid.Column="1"
                                 ToggleValue="{Binding RequireAdminToggle, Mode=TwoWay}" />
 
-                            <Label Grid.Row="4"
+                            <Label Grid.Row="5"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.VAICOMTXInhibitEnabled}" />
 
                             <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="4"
+                                Grid.Row="5"
                                 Grid.Column="1"
                                 ToggleValue="{Binding VAICOMTXInhibitEnabled, Mode=TwoWay}" />
 
-                            <Label Grid.Row="5"
+                            <Label Grid.Row="6"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.ExpandInputDevices}" />
 
                             <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="5"
+                                Grid.Row="6"
                                 Grid.Column="1"
                                 ToggleValue="{Binding ExpandInputDevices, Mode=TwoWay}" />
 
-                            <Label Grid.Row="6"
+                            <Label Grid.Row="7"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.AllowXInputController}" />
 
                             <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="6"
+                                Grid.Row="7"
                                 Grid.Column="1"
                                 ToggleValue="{Binding AllowXInputController, Mode=TwoWay}" />
 
-                            <Label Grid.Row="7"
+                            <Label Grid.Row="8"
                                    Grid.Column="0"
                                    HorizontalContentAlignment="Center"
                                    VerticalContentAlignment="Center"
                                    Content="{x:Static p:Resources.PlayConnectionSounds}" />
 
                             <clientSettingsControl:SettingsToggleControl
-                                Grid.Row="7"
+                                Grid.Row="8"
                                 Grid.Column="1"
                                 ToggleValue="{Binding PlayConnectionSounds, Mode=TwoWay}" />
                         </Grid>

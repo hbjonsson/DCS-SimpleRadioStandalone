@@ -11,6 +11,7 @@ using System.Windows.Forms;
 using Ciribob.DCS.SimpleRadio.Standalone.Client.Settings.Favourites;
 using Ciribob.DCS.SimpleRadio.Standalone.Client.UI.ClientWindow.ClientSettingsControl.Model;
 using Ciribob.DCS.SimpleRadio.Standalone.Client.UI.ClientWindow.Favourites;
+using Ciribob.DCS.SimpleRadio.Standalone.Client.UI.UpdateWindow;
 using Ciribob.DCS.SimpleRadio.Standalone.Client.Utils;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Helpers;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Network.Singletons;
@@ -76,7 +77,9 @@ public partial class MainWindow : MetroWindow
 
         FavouriteServersView.DataContext = ((MainWindowViewModel)DataContext).FavouriteServersViewModel;
 
-        // Official SRS updates would overwrite the OpenFreq DSP fork. Fork releases are distributed separately.
+        // Official SRS updates would overwrite the OpenFreq DSP fork, so the client updates from the fork's
+        // own releases instead.
+        Loaded += async (_, _) => await ForkUpdateManager.CheckAsync(userRequested: false);
 
 
         //TODO move this

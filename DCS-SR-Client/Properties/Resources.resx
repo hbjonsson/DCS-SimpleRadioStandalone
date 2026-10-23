@@ -193,7 +193,13 @@
     <value>PLACE_HOLDER</value>
   </data>
   <data name="CheckForBetaUpdates" xml:space="preserve">
-    <value>Check for beta updates</value>
+    <value>Include test (pre-release) versions</value>
+  </data>
+  <data name="CheckForUpdates" xml:space="preserve">
+    <value>Check for updates at startup</value>
+  </data>
+  <data name="CheckForUpdatesNow" xml:space="preserve">
+    <value>Check now</value>
   </data>
   <data name="ClientWindowTitle" xml:space="preserve">
     <value>455th vAEW SRS</value>
