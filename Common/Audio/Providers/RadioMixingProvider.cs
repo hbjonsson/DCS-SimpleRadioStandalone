@@ -23,7 +23,6 @@ public class RadioMixingProvider : ISampleProvider
     private readonly CircularFloatBuffer effectsBuffer;
 
 
-    private readonly ClientEffectsPipeline pipeline = new();
     private readonly OpenFreqReceiverEffectsPipeline openFreqPipeline;
 
     private readonly ProfileSettingsStore profileSettings =
@@ -39,10 +38,8 @@ public class RadioMixingProvider : ISampleProvider
     private float[] _openFreqScratch;
     private float[] _srsScratch;
     private int availableInBuffer = 0;
-    private long _lastEngineRefresh;
-    private ReceiverEffectsEngine _receiverEffectsEngine = ReceiverEffectsEngine.SRS;
     private int _openFreqDrainSamplesRemaining;
-    /// <summary>Last OpenFreq AM radio volume; reused for post-TX drain so the tail follows the knob.</summary>
+    /// <summary>Last receive radio volume; reused for post-TX drain so the tail follows the knob.</summary>
     private float _openFreqRadioVolume = 1f;
     /// <summary>Receiving-radio volume used to scale RX/TX tones for this radio.</summary>
     private float _radioToneVolume = 1f;
@@ -149,8 +146,7 @@ public class RadioMixingProvider : ISampleProvider
 
             var hasIncomingAudio = segments?.Count > 0;
 
-            RefreshReceiverEngine();
-            var openFreqAmOnly = false;
+            var squelchKeyedOnly = false;
             var openFreqRxActive = false;
             var hasFallback = false;
 
@@ -162,7 +158,7 @@ public class RadioMixingProvider : ISampleProvider
                     QueueIncomingAudio(
                         segments,
                         longestSegmentLength,
-                        out openFreqAmOnly,
+                        out squelchKeyedOnly,
                         out openFreqRxActive,
                         out hasFallback);
 
@@ -174,12 +170,11 @@ public class RadioMixingProvider : ISampleProvider
                     logger.Error(e, "Error mixing segments");
                 }
             }
-            else if (_openFreqDrainSamplesRemaining > 0
-                     && _receiverEffectsEngine == ReceiverEffectsEngine.OpenFreq)
+            else if (_openFreqDrainSamplesRemaining > 0)
             {
                 try
                 {
-                    openFreqAmOnly = true;
+                    squelchKeyedOnly = true;
                     var drainFrames = Math.Min(
                         monoBufferLength - monoOffset,
                         _openFreqDrainSamplesRemaining);
@@ -199,17 +194,17 @@ public class RadioMixingProvider : ISampleProvider
                 }
             }
 
-            // OpenFreq-AM-only: activity from squelch/drain. Otherwise SRS-style presence.
-            var rxActive = openFreqAmOnly
+            // Analog radio only: activity from squelch/drain. Otherwise presence of audio.
+            var rxActive = squelchKeyedOnly
                 ? openFreqRxActive
                 : hasIncomingAudio || availableInBuffer > 0 || openFreqRxActive;
 
-            // Suppress generic RADIO_TRANS clicks only when OpenFreq AM alone owns the event.
+            // Suppress generic RADIO_TRANS clicks only when an analog squelch alone owns the event.
             // KY-58 is evaluated before that suppress and remains audible (volume-scaled).
             monoOffset += HandleStartEndTones(
                 rxActive,
                 ky58Tone,
-                openFreqAmOnly,
+                squelchKeyedOnly,
                 monoBuffer,
                 monoOffset,
                 monoBufferLength - monoOffset);
@@ -268,42 +263,10 @@ public class RadioMixingProvider : ISampleProvider
         }
     }
 
-    private void RefreshReceiverEngine()
-    {
-        var now = DateTime.Now.Ticks;
-        if (TimeSpan.FromTicks(now - _lastEngineRefresh).TotalSeconds <= 3)
-            return;
-
-        _lastEngineRefresh = now;
-        var previous = _receiverEffectsEngine;
-        var raw = profileSettings.GetClientSettingString(ProfileSettingsKeys.ReceiverEffectsEngine);
-        if (!Enum.TryParse(raw, true, out _receiverEffectsEngine))
-            _receiverEffectsEngine = ReceiverEffectsEngine.SRS;
-
-        if (previous != _receiverEffectsEngine)
-        {
-            openFreqPipeline.Reset();
-            _openFreqRadioVolume = 1f;
-            _radioToneVolume = 1f;
-        }
-    }
-
-    internal void SetReceiverEffectsEngine(ReceiverEffectsEngine engine)
-    {
-        if (_receiverEffectsEngine == engine)
-            return;
-
-        _receiverEffectsEngine = engine;
-        openFreqPipeline.Reset();
-        _openFreqDrainSamplesRemaining = 0;
-        _openFreqRadioVolume = 1f;
-        _radioToneVolume = 1f;
-    }
-
     internal void QueueIncomingAudio(
         IReadOnlyList<TransmissionSegment> segments,
         int longestSegmentLength,
-        out bool openFreqAmOnly,
+        out bool squelchKeyedOnly,
         out bool openFreqRxActive,
         out bool hasFallback)
     {
@@ -320,71 +283,54 @@ public class RadioMixingProvider : ISampleProvider
         targetSpan.Clear();
         _radioToneVolume = segments[0].Volume;
 
-        IReadOnlyList<TransmissionSegment> openFreqAm = null;
-        IReadOnlyList<TransmissionSegment> fallback;
-        if (_receiverEffectsEngine == ReceiverEffectsEngine.OpenFreq)
+        var radioAudio = new List<TransmissionSegment>(segments.Count);
+        var fallback = new List<TransmissionSegment>(segments.Count);
+        foreach (var segment in segments)
         {
-            var openFreqSegments = new List<TransmissionSegment>(segments.Count);
-            var fallbackSegments = new List<TransmissionSegment>(segments.Count);
-            foreach (var segment in segments)
-            {
-                if (OpenFreqReceiverEffectsPipeline.IsEligibleOpenFreqAm(segment))
-                    openFreqSegments.Add(segment);
-                else
-                    fallbackSegments.Add(segment);
-            }
-
-            openFreqAm = openFreqSegments;
-            fallback = fallbackSegments;
-        }
-        else
-        {
-            fallback = segments;
+            if (OpenFreqReceiverEffectsPipeline.IsEligible(segment))
+                radioAudio.Add(segment);
+            else
+                fallback.Add(segment);
         }
 
         hasFallback = fallback.Count > 0;
-        var hasOpenFreqAm = openFreqAm is { Count: > 0 };
-        openFreqAmOnly = hasOpenFreqAm && !hasFallback;
+        var hasRadioAudio = radioAudio.Count > 0;
+        squelchKeyedOnly = hasRadioAudio && !hasFallback
+                         && radioAudio.TrueForAll(OpenFreqReceiverEffectsPipeline.IsSquelchKeyed);
         openFreqRxActive = false;
+        _openFreqDrainSamplesRemaining = 0;
 
-        if (hasOpenFreqAm)
+        if (hasRadioAudio)
         {
             EnsureScratch(ref _openFreqScratch, longestSegmentLength);
-            var amSpan = _openFreqScratch.AsSpan(0, longestSegmentLength);
-            amSpan.Clear();
-            openFreqPipeline.ProcessSegments(amSpan, openFreqAm);
+            var radioSpan = _openFreqScratch.AsSpan(0, longestSegmentLength);
+            openFreqPipeline.ProcessSegments(radioSpan, radioAudio);
             openFreqRxActive = openFreqPipeline.WasSquelchOpen;
-            _openFreqRadioVolume = openFreqAm[0].Volume;
-            AudioManipulationHelper.ClipArray(amSpan);
-            AudioManipulationHelper.ApplyLinearGain(amSpan, _openFreqRadioVolume);
-            MixInto(targetSpan, amSpan);
+            _openFreqRadioVolume = radioAudio[0].Volume;
+            AudioManipulationHelper.ClipArray(radioSpan);
+            AudioManipulationHelper.ApplyLinearGain(radioSpan, _openFreqRadioVolume);
+            MixInto(targetSpan, radioSpan);
+            lastModulation = radioAudio[0].Modulation;
 
-            if (openFreqAmOnly)
-            {
+            if (squelchKeyedOnly)
                 _openFreqDrainSamplesRemaining =
                     OpenFreqReceiverEffectsPipeline.DrainSampleCount(WaveFormat.SampleRate);
-                lastModulation = Modulation.AM;
-            }
-            else
-            {
-                _openFreqDrainSamplesRemaining = 0;
-            }
-        }
-        else
-        {
-            _openFreqDrainSamplesRemaining = 0;
         }
 
         if (hasFallback)
         {
+            // Failed-decrypt static and server global frequencies: dry, radio volume only.
             EnsureScratch(ref _srsScratch, longestSegmentLength);
-            var srsSpan = _srsScratch.AsSpan(0, longestSegmentLength);
-            srsSpan.Clear();
-            // #TODO: pass receiving radio model name.
-            pipeline.ProcessSegments(srsSpan, fallback, null);
-            MixInto(targetSpan, srsSpan);
+            var dry = _srsScratch.AsSpan(0, longestSegmentLength);
+            foreach (var segment in fallback)
+            {
+                dry.Clear();
+                segment.Audio.AsSpan(0, Math.Min(segment.Audio.Length, dry.Length)).CopyTo(dry);
+                AudioManipulationHelper.ApplyLinearGain(dry, segment.Volume);
+                MixInto(targetSpan, dry);
+            }
+
             lastModulation = fallback[fallback.Count - 1].Modulation;
-            _openFreqDrainSamplesRemaining = 0;
         }
 
         AudioManipulationHelper.ClipArray(targetSpan);
@@ -395,7 +341,7 @@ public class RadioMixingProvider : ISampleProvider
     internal bool QueueOpenFreqDrain(int drainFrames)
     {
         drainFrames = Math.Min(drainFrames, _openFreqDrainSamplesRemaining);
-        if (drainFrames <= 0 || _receiverEffectsEngine != ReceiverEffectsEngine.OpenFreq)
+        if (drainFrames <= 0)
             return false;
 
         var totalSize = availableInBuffer + drainFrames;
@@ -410,7 +356,6 @@ public class RadioMixingProvider : ISampleProvider
         CommitProcessedAudio(targetSpan);
         availableInBuffer += targetSpan.Length;
         _openFreqDrainSamplesRemaining -= targetSpan.Length;
-        lastModulation = Modulation.AM;
 
         return openFreqPipeline.WasSquelchOpen || _openFreqDrainSamplesRemaining > 0;
     }
@@ -540,7 +485,7 @@ public class RadioMixingProvider : ISampleProvider
         }
         else if (suppressGenericRadioClicks)
         {
-            // OpenFreq AM owns keying character via squelch; skip RADIO_TRANS_* WAVs.
+            // The analog squelch owns keying character; skip RADIO_TRANS_* WAVs.
         }
         else
         {
@@ -581,7 +526,7 @@ public class RadioMixingProvider : ISampleProvider
         }
         else if (suppressGenericRadioClicks)
         {
-            // OpenFreq AM owns keying character via squelch; skip RADIO_TRANS_* WAVs.
+            // The analog squelch owns keying character; skip RADIO_TRANS_* WAVs.
         }
         else
         {

@@ -20,4 +20,9 @@ public readonly struct RadioReceiverInput
     /// Used for AM beat / multi-transmitter interference.
     /// </summary>
     public float CarrierOffsetHz { get; init; }
+
+    /// <summary>
+    /// Stable transmitter identity (e.g. sender GUID). FM keeps each carrier's phase across buffers by it.
+    /// </summary>
+    public string Key { get; init; }
 }

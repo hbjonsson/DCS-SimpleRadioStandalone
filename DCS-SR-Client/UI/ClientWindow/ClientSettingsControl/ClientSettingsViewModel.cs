@@ -816,39 +816,6 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         }
     }
 
-    public bool HQEffectToggle
-    {
-        get => _globalSettings.ProfileSettingsStore.GetClientSettingBool(
-            ProfileSettingsKeys.HAVEQUICKTone);
-        set
-        {
-            _globalSettings.ProfileSettingsStore.SetClientSettingBool(ProfileSettingsKeys.HAVEQUICKTone,
-                value);
-            NotifyPropertyChanged();
-        }
-    }
-
-
-    public float HQEffectVolume
-    {
-        get =>
-            (float)((_globalSettings.ProfileSettingsStore.GetClientSettingFloat(ProfileSettingsKeys.HQToneVolume)
-                     / double.Parse(
-                         ProfileSettingsStore.DefaultSettingsProfileSettings
-                             [ProfileSettingsKeys.HQToneVolume.ToString()], CultureInfo.InvariantCulture)) * 100.0f);
-        set
-        {
-            var orig = double.Parse(
-                ProfileSettingsStore.DefaultSettingsProfileSettings[ProfileSettingsKeys.HQToneVolume.ToString()],
-                CultureInfo.InvariantCulture);
-
-            var vol = orig * (value / 100.0f);
-
-            _globalSettings.ProfileSettingsStore.SetClientSettingFloat(ProfileSettingsKeys.HQToneVolume, (float)vol);
-            NotifyPropertyChanged();
-        }
-    }
-
     public bool AmbientEffectToggle
     {
         get => _globalSettings.ProfileSettingsStore.GetClientSettingBool(
@@ -959,129 +926,6 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         }
         get => CachedAudioEffectProvider.Instance.SelectedIntercomTransmissionEndEffect;
     }
-
-    // Add the new float property for the slider (0-100%)
-    public float RadioSoundEffectsRatio
-    {
-        get
-        {
-            float value = _globalSettings.ProfileSettingsStore.GetClientSettingFloat(ProfileSettingsKeys.RadioEffectsRatio);
-            value = Math.Clamp(value, 0f, 1f);
-            return value * 100f; // 0.0–1.0 → 0–100%
-        }
-        set
-        {
-            float clamped = Math.Clamp(value, 0f, 100f) / 100f; // 0–100% → 0.0–1.0
-            _globalSettings.ProfileSettingsStore.SetClientSettingFloat(ProfileSettingsKeys.RadioEffectsRatio, clamped);
-            NotifyPropertyChanged();
-        }
-    }
-
-    public bool RadioSoundEffectsClipping
-    {
-        get => _globalSettings.ProfileSettingsStore.GetClientSettingBool(ProfileSettingsKeys.RadioEffectsClipping);
-        set
-        {
-            _globalSettings.ProfileSettingsStore.SetClientSettingBool(ProfileSettingsKeys.RadioEffectsClipping,
-                value);
-            NotifyPropertyChanged();
-        }
-    }
-
-    public bool NATORadioToneToggle
-    {
-        get => _globalSettings.ProfileSettingsStore.GetClientSettingBool(ProfileSettingsKeys.NATOTone);
-        set
-        {
-            _globalSettings.ProfileSettingsStore.SetClientSettingBool(ProfileSettingsKeys.NATOTone, value);
-            NotifyPropertyChanged();
-        }
-    }
-
-    public double NATORadioToneVolume
-    {
-        get => _globalSettings.ProfileSettingsStore.GetClientSettingFloat(ProfileSettingsKeys.NATOToneVolume)
-            / double.Parse(
-                ProfileSettingsStore.DefaultSettingsProfileSettings[ProfileSettingsKeys.NATOToneVolume.ToString()],
-                CultureInfo.InvariantCulture) * 100.0f;
-        set
-        {
-            var orig = double.Parse(
-                ProfileSettingsStore.DefaultSettingsProfileSettings[ProfileSettingsKeys.NATOToneVolume.ToString()],
-                CultureInfo.InvariantCulture);
-            var vol = orig * (value / 100.0f);
-
-            _globalSettings.ProfileSettingsStore.SetClientSettingFloat(ProfileSettingsKeys.NATOToneVolume,
-                (float)vol);
-            NotifyPropertyChanged();
-        }
-    }
-
-    public bool BackgroundRadioNoiseToggle
-    {
-        get => _globalSettings.ProfileSettingsStore.GetClientSettingBool(ProfileSettingsKeys
-            .RadioBackgroundNoiseEffect);
-        set
-        {
-            _globalSettings.ProfileSettingsStore.SetClientSettingBool(
-                ProfileSettingsKeys.RadioBackgroundNoiseEffect, value);
-            NotifyPropertyChanged();
-        }
-    }
-
-    public bool PerRadioModelEffects
-    {
-        get => _globalSettings.ProfileSettingsStore.GetClientSettingBool(ProfileSettingsKeys.PerRadioModelEffects);
-        set
-        {
-            _globalSettings.ProfileSettingsStore.SetClientSettingBool(ProfileSettingsKeys.PerRadioModelEffects, value);
-            NotifyPropertyChanged();
-        }
-    }
-
-    /// <summary>
-    /// When true, eligible AM receive uses OpenFreq's local receiver DSP.
-    /// Profile default is OpenFreq. FM / MIDS / intercom / HaveQuick stay on SRS paths.
-    /// Wire protocol is unchanged.
-    /// </summary>
-    public bool OpenFreqReceiveEffects
-    {
-        get
-        {
-            var raw = _globalSettings.ProfileSettingsStore.GetClientSettingString(
-                ProfileSettingsKeys.ReceiverEffectsEngine);
-            return Enum.TryParse(raw, true, out ReceiverEffectsEngine engine)
-                   && engine == ReceiverEffectsEngine.OpenFreq;
-        }
-        set
-        {
-            _globalSettings.ProfileSettingsStore.SetClientSettingString(
-                ProfileSettingsKeys.ReceiverEffectsEngine,
-                value ? nameof(ReceiverEffectsEngine.OpenFreq) : nameof(ReceiverEffectsEngine.SRS));
-            NotifyPropertyChanged();
-        }
-    }
-
-    public float NoiseGainDB
-    {
-        get => _globalSettings.ProfileSettingsStore.GetClientSettingFloat(ProfileSettingsKeys.NoiseGainDB);
-        set
-        {
-            _globalSettings.ProfileSettingsStore.SetClientSettingFloat(ProfileSettingsKeys.NoiseGainDB, value);
-            NotifyPropertyChanged();
-        }
-    }
-
-    public float HFNoiseGainDB
-    {
-        get => _globalSettings.ProfileSettingsStore.GetClientSettingFloat(ProfileSettingsKeys.HFNoiseGainDB);
-        set
-        {
-            _globalSettings.ProfileSettingsStore.SetClientSettingFloat(ProfileSettingsKeys.HFNoiseGainDB, value);
-            NotifyPropertyChanged();
-        }
-    }
-
 
     /**
          * Radio Audio Balance
@@ -1324,17 +1168,6 @@ public class ClientSettingsViewModel : PropertyChangedBaseClass, IHandle<NewUnit
         NotifyPropertyChanged(nameof(SelectedIntercomEndTransmitEffect));
         NotifyPropertyChanged(nameof(RadioEncryptionEffectsToggle));
         NotifyPropertyChanged(nameof(RadioMIDSToggle));
-        NotifyPropertyChanged(nameof(RadioSoundEffectsRatio));
-        NotifyPropertyChanged(nameof(RadioSoundEffectsClipping));
-        NotifyPropertyChanged(nameof(PerRadioModelEffects));
-        NotifyPropertyChanged(nameof(OpenFreqReceiveEffects));
-        NotifyPropertyChanged(nameof(NATORadioToneToggle));
-        NotifyPropertyChanged(nameof(NATORadioToneVolume));
-        NotifyPropertyChanged(nameof(HQEffectToggle));
-        NotifyPropertyChanged(nameof(HQEffectVolume));
-        NotifyPropertyChanged(nameof(BackgroundRadioNoiseToggle));
-        NotifyPropertyChanged(nameof(NoiseGainDB));
-        NotifyPropertyChanged(nameof(HFNoiseGainDB));
 
         NotifyPropertyChanged(nameof(AmbientEffectToggle));
         NotifyPropertyChanged(nameof(AmbientEffectIntercomToggle));

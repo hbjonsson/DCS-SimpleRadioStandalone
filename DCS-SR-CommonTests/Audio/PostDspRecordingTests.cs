@@ -35,7 +35,7 @@ public class PostDspRecordingTests
     public void RadioMixer_CapturesOpenFreqPlaybackAndDrainExactlyOnce()
     {
         var sink = new CapturingRecordingSink();
-        var mixer = CreateMixer(sink, ReceiverEffectsEngine.OpenFreq);
+        var mixer = CreateMixer(sink);
         var frameLength = Constants.OUTPUT_SEGMENT_FRAMES;
         var voice = new float[frameLength];
         for (var i = 0; i < voice.Length; i++)
@@ -68,10 +68,10 @@ public class PostDspRecordingTests
     }
 
     [TestMethod]
-    public void RadioMixer_CapturesClassicSrsPlaybackBlock()
+    public void RadioMixer_CapturesFmReceiverPlaybackBlock()
     {
         var sink = new CapturingRecordingSink();
-        var mixer = CreateMixer(sink, ReceiverEffectsEngine.SRS);
+        var mixer = CreateMixer(sink);
         var audio = new float[Constants.OUTPUT_SEGMENT_FRAMES];
         for (var i = 0; i < audio.Length; i++)
             audio[i] = 0.15f * MathF.Sin(2f * MathF.PI * 600f * i / Constants.OUTPUT_SAMPLE_RATE);
@@ -84,8 +84,8 @@ public class PostDspRecordingTests
             out var hasFallback);
 
         var playback = ReadQueuedBlock(mixer, audio.Length);
-        Assert.IsFalse(openFreqOnly);
-        Assert.IsTrue(hasFallback);
+        Assert.IsTrue(openFreqOnly);
+        Assert.IsFalse(hasFallback);
         Assert.AreEqual(1, sink.Blocks.Count);
         CollectionAssert.AreEqual(playback, sink.Blocks[0].Samples);
     }
@@ -94,7 +94,7 @@ public class PostDspRecordingTests
     public void RadioMixer_MixedBucketsRecordOneFinalClippedBlock()
     {
         var sink = new CapturingRecordingSink();
-        var mixer = CreateMixer(sink, ReceiverEffectsEngine.OpenFreq);
+        var mixer = CreateMixer(sink);
         var length = Constants.OUTPUT_SEGMENT_FRAMES;
         var am = new float[length];
         var fm = new float[length];
@@ -105,7 +105,7 @@ public class PostDspRecordingTests
             new[]
             {
                 MakeSegment(am, Modulation.AM),
-                MakeSegment(fm, Modulation.FM),
+                MakeSegment(fm, Modulation.AM, decryptable: false),
             },
             length,
             out var openFreqOnly,
@@ -135,14 +135,10 @@ public class PostDspRecordingTests
         CollectionAssert.AreEqual(new[] { 3f, 4f, 5f, 6f, 7f }, remaining);
     }
 
-    private static RadioMixingProvider CreateMixer(
-        IAudioRecordingSink sink,
-        ReceiverEffectsEngine engine)
+    private static RadioMixingProvider CreateMixer(IAudioRecordingSink sink)
     {
         var waveFormat = WaveFormat.CreateIeeeFloatWaveFormat(Constants.OUTPUT_SAMPLE_RATE, 2);
-        var mixer = new RadioMixingProvider(waveFormat, radioId: 1, audioRecordingSink: sink);
-        mixer.SetReceiverEffectsEngine(engine);
-        return mixer;
+        return new RadioMixingProvider(waveFormat, radioId: 1, audioRecordingSink: sink);
     }
 
     private static float[] ReadQueuedBlock(RadioMixingProvider mixer, int length)
@@ -154,14 +150,15 @@ public class PostDspRecordingTests
 
     private static TransmissionSegment MakeSegment(
         float[] audio,
-        Modulation modulation = Modulation.AM)
+        Modulation modulation = Modulation.AM,
+        bool decryptable = true)
     {
         return new TransmissionSegment(new DeJitteredTransmission
         {
             PCMMonoAudio = audio,
             PCMAudioLength = audio.Length,
             Modulation = modulation,
-            Decryptable = true,
+            Decryptable = decryptable,
             Frequency = 125_000_000,
             ReceivingPower = 0.1,
             Volume = 1f,

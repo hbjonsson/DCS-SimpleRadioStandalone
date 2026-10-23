@@ -24,7 +24,7 @@ public class ClientAudioProvider : AudioProvider
     private readonly ProceduralAmbientProcessor.Profile?[] proceduralAmbientProfiles;
 
     private readonly CachedAudioEffectProvider audioEffectProvider = CachedAudioEffectProvider.Instance;
-    private readonly ClientTransmissionPipelineProvider pipeline = new ClientTransmissionPipelineProvider();
+    private readonly TransmitterProcessor[] transmitters;
 
     private readonly ProfileSettingsStore settingsStore = GlobalSettingsStore.Instance.ProfileSettingsStore;
     private bool ambientCockpitEffectEnabled = true;
@@ -52,6 +52,7 @@ public class ClientAudioProvider : AudioProvider
         ambientEffectProgress = new Dictionary<string, int>[radios];
         proceduralAmbientProcessors = new ProceduralAmbientProcessor[radios];
         proceduralAmbientProfiles = new ProceduralAmbientProcessor.Profile?[radios];
+        transmitters = new TransmitterProcessor[radios];
 
         for (var i = 0; i < radios; i++) ambientEffectProgress[i] = new Dictionary<string, int>();
     }
@@ -191,14 +192,10 @@ public class ClientAudioProvider : AudioProvider
                 proceduralAmbientProfiles[receiveRadio] = proceduralProfile;
             }
 
-            // OpenFreq owns AM tone: use native-like muffling wetness when engines are on,
-            // instead of DCS ambient.vol defaults around 0.15.
-            float proceduralVolume;
-            if (OpenFreqReceiverEffectsPipeline.ShouldOwnAmPath(modulation, decryptable: true, noAudioEffects: false)
-                && ambient.vol > 0.01f)
-                proceduralVolume = Math.Clamp(ambientCockpitEffectVolume, 0f, 1f);
-            else
-                proceduralVolume = Math.Clamp(ambient.vol * ambientCockpitEffectVolume, 0f, 1f);
+            // Native-like muffling wetness instead of DCS ambient.vol defaults around 0.15.
+            var proceduralVolume = ambient.vol > 0.01f
+                ? Math.Clamp(ambientCockpitEffectVolume, 0f, 1f)
+                : 0f;
 
             proceduralAmbientProcessors[receiveRadio].Process(pcmAudio, proceduralVolume);
             return;
@@ -357,30 +354,28 @@ public class ClientAudioProvider : AudioProvider
         var segment = new TransmissionSegment(transmission);
 
         var segmentAudio = segment.Audio.AsSpan();
-        var openFreqOwnsAm = OpenFreqReceiverEffectsPipeline.ShouldOwnAmPath(
-            transmission.Modulation, transmission.Decryptable, transmission.NoAudioEffects);
+        var radio = transmission.ReceivedRadio;
 
-        if (transmission.Decryptable)
-        {
-            // OpenFreq receive maps power/LOS into SNR itself — avoid double attenuation.
-            if (!openFreqOwnsAm)
-            {
-                AdjustVolumeForLoss(transmission.Modulation, transmission.ReceivingPower,
-                    transmission.LineOfSightLoss, segmentAudio);
-            }
-
-            AddCockpitAmbientAudio(transmission.ReceivedRadio, transmission.Modulation, transmission.Ambient,
-                segmentAudio);
-        }
-        else
+        if (!transmission.Decryptable)
         {
             AddEncryptionFailureEffect(segmentAudio);
         }
-
-        // OpenFreq owns eligible AM radio character; skip SRS TX radio-model FX on that path.
-        // Failed decrypt / NoAudioEffects / non-AM always run the SRS TX pipeline (volume included).
-        if (!openFreqOwnsAm)
-            pipeline.Process(transmission, segmentAudio);
+        else if (transmission.NoAudioEffects)
+        {
+            // Server global frequencies: no radio character, so SRS's distance fade still applies.
+            AdjustVolumeForLoss(transmission.Modulation, transmission.ReceivingPower,
+                transmission.LineOfSightLoss, segmentAudio);
+            AddCockpitAmbientAudio(radio, transmission.Modulation, transmission.Ambient, segmentAudio);
+        }
+        else
+        {
+            // The sender's radio: level the voice, add their cockpit, then clip. The receiver models
+            // distance itself, so no SRS distance fade here.
+            transmitters[radio] ??= new TransmitterProcessor(Constants.OUTPUT_SAMPLE_RATE);
+            transmitters[radio].ApplyLevelControl(segmentAudio);
+            AddCockpitAmbientAudio(radio, transmission.Modulation, transmission.Ambient, segmentAudio);
+            TransmitterProcessor.ApplySpeechClipper(segmentAudio, transmission.Modulation, segment.HasEncryption);
+        }
 
         JitterBufferProviderInterface[radioId].Dispose(ref transmission);
         return segment;

@@ -3,31 +3,71 @@ using System.Collections.Generic;
 using System.Threading;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Models;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Recording;
+using Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Utility;
 using Ciribob.DCS.SimpleRadio.Standalone.Common.Models.Player;
-using Ciribob.DCS.SimpleRadio.Standalone.Common.Settings;
 using NLog;
 using OpenFreqAudio;
 
 namespace Ciribob.DCS.SimpleRadio.Standalone.Common.Audio.Providers;
 
 /// <summary>
-/// Optional AM receive effects engine that runs OpenFreq's BASS-free
-/// <see cref="RadioReceiverProcessor"/> locally. Does not alter SRS wire formats.
-/// One instance is owned per <see cref="RadioMixingProvider"/> (per receiving radio).
+/// Receive side of every radio, run locally on the listening client; wire formats are unchanged.
+/// One instance per receiving radio (<see cref="RadioMixingProvider"/>), holding one receiver per kind:
+/// <list type="bullet">
+/// <item>AM and HAVEQUICK: OpenFreq's <see cref="RadioReceiverProcessor"/> (AN/ARC-210 AM).</item>
+/// <item>FM and SINCGARS: <see cref="FmReceiverProcessor"/> (AN/ARC-210 FM).</item>
+/// <item>Encrypted voice, MIDS and SATCOM: 16 kbit/s CVSD digital voice, garbling with bit errors.</item>
+/// <item>Intercom: wired, wider band, no RF noise.</item>
+/// </list>
+/// Each radio kind ends in the receive audio compressor (MIL-R-29583 3.5.1.15.4.5.8), and every kind in a
+/// trim that brings it to the same listening level. The transmitting side lives in <see cref="TransmitterProcessor"/>.
 /// </summary>
 public sealed class OpenFreqReceiverEffectsPipeline
 {
+    public enum ReceiverKind
+    {
+        Am,
+        Fm,
+        Digital,
+        Intercom
+    }
+
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
     private static readonly ThreadLocal<Random> ThreadRng =
         new(() => new Random(Environment.TickCount * Thread.CurrentThread.ManagedThreadId));
 
-    /// <summary>Post-TX drain length so AGC/squelch can fall naturally (~150 ms).</summary>
-    public const int DrainMilliseconds = 150;
+    /// <summary>Post-TX drain so AGC, squelch and the FM squelch tail fall naturally.</summary>
+    public const int DrainMilliseconds = 200;
+
+    // Compressor thresholds: detected level at 30% AM / ±2.4 kHz FM deviation (25-35% of full scale).
+    // The AM detector's AGC makes its output non-linear, hence the lower AM value.
+    internal const float AmCompressorThreshold = 0.25f;
+    internal const float CompressorThreshold = 0.28f;
+
+    // Makeup after the compressor: voice peaks ~1 dB under full scale; the output limiter catches the rest.
+    // The other trims match each kind's speech level to AM (3.5.1.15.4.5.7: within 2 dB across modes).
+    internal const float AmOutputTrim = 1.84f;
+    internal const float FmOutputTrim = 1.5f;
+    internal const float DigitalOutputTrim = 1.7f;
+    internal const float IntercomOutputTrim = 1f;
 
     private readonly int _radioId;
     private readonly int _sampleRate;
-    private RadioReceiverProcessor _processor;
+    private readonly RadioReceiverProcessor _am;
+    private readonly FmReceiverProcessor _fm;
+    private readonly AudioBandFilter _digitalBand;
+    private readonly AudioBandFilter _intercomBand;
+    private readonly ReceiveCompressor _amCompressor;
+    private readonly ReceiveCompressor _fmCompressor;
+    private readonly ReceiveCompressor _digitalCompressor;
+    // Syllable onsets the compressor is too slow for would otherwise hard-clip in the mixer.
+    private readonly PeakLimiter _limiter;
+    private readonly Dictionary<string, CvsdVoiceCodec> _cvsdByGuid = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, float> _ppmByGuid = new(StringComparer.Ordinal);
+    private readonly List<TransmissionSegment>[] _byKind =
+        { new(), new(), new(), new() };
+    private float[] _scratch = Array.Empty<float>();
 
     // Event-driven RF fading (OpenFreq RadioEffect style).
     private int _dropoutSamplesLeft;
@@ -37,81 +77,94 @@ public sealed class OpenFreqReceiverEffectsPipeline
     private int _deepFadeFadeSamples;
     private int _deepFadeInitialSamples;
 
-    private readonly Dictionary<string, float> _ppmByGuid = new(StringComparer.Ordinal);
-
-    // Transmitter ALC + speech clipper (AN/ARC-210, MIL-R-29583 3.5.1.16.8.2): every sender is
-    // driven to ~80% AM regardless of mic level, so loud syllables clip softly — the radio grit.
-    internal const float AlcTarget = 0.95f; // peak-follower target; a steady tone lands at ~85% AM
-    private const float AlcMaxGain = 10f; // +20 dB, so pauses don't pump mic noise up
-    private const float ClipperKnee = 0.6f;
-    // Hotter modulation makes the detected voice ~12 dB louder; trim back to the old listening level.
-    internal const float OutputTrim = 0.25f;
-    private readonly Dictionary<string, AttackDecayFilter> _alcByGuid = new(StringComparer.Ordinal);
-
     public OpenFreqReceiverEffectsPipeline(int radioId, int sampleRate)
     {
         _radioId = radioId;
         _sampleRate = sampleRate > 0 ? sampleRate : Constants.OUTPUT_SAMPLE_RATE;
         // Default VHF until the first segment provides a frequency.
-        _processor = new RadioReceiverProcessor(_sampleRate, 125000)
-        {
-            SquelchLevel = 1.0f
-        };
+        _am = new RadioReceiverProcessor(_sampleRate, 125000) { SquelchLevel = 1.0f };
+        _fm = new FmReceiverProcessor(_sampleRate);
+        // Digital voice leaves the KY-58/terminal into the same 300-3000 Hz radio audio stage.
+        _digitalBand = new AudioBandFilter(_sampleRate, 290, 7, 3000, 6);
+        // Assumption, no spec found: aircraft intercom is wired and passes roughly 250-6000 Hz.
+        _intercomBand = new AudioBandFilter(_sampleRate, 250, 2, 6000, 4);
+        _amCompressor = new ReceiveCompressor(AmCompressorThreshold, _sampleRate);
+        _fmCompressor = new ReceiveCompressor(CompressorThreshold, _sampleRate);
+        _digitalCompressor = new ReceiveCompressor(CompressorThreshold, _sampleRate);
+        _limiter = new PeakLimiter(_sampleRate);
     }
 
-    /// <summary>True if the DSP squelch gate was open for any sample of the last process call.</summary>
-    public bool WasSquelchOpen => _processor.WasSquelchOpen;
+    /// <summary>
+    /// True if the last process call produced keyed audio: an analog squelch was open, or digital or
+    /// intercom audio was present.
+    /// </summary>
+    public bool WasSquelchOpen { get; private set; }
+
+    public static ReceiverKind KindOf(Modulation modulation, bool encrypted)
+    {
+        if (modulation == Modulation.INTERCOM)
+            return ReceiverKind.Intercom;
+        if (encrypted || modulation is Modulation.MIDS or Modulation.SATCOM)
+            return ReceiverKind.Digital;
+        if (modulation is Modulation.FM or Modulation.SINCGARS)
+            return ReceiverKind.Fm;
+        return ReceiverKind.Am;
+    }
+
+    public static ReceiverKind KindOf(TransmissionSegment segment)
+        => KindOf(segment.Modulation, segment.HasEncryption);
+
+    /// <summary>Analog receivers own keying through their squelch (open, tail, close).</summary>
+    public static bool IsSquelchKeyed(TransmissionSegment segment)
+        => KindOf(segment) is ReceiverKind.Am or ReceiverKind.Fm;
 
     /// <summary>
-    /// Process AM segments through OpenFreq receiver DSP into <paramref name="audioOut"/>.
-    /// Returns samples written. Non-AM / bypass segments should not call this.
+    /// Everything with effects allowed goes through this pipeline. Failed decrypts (static) and
+    /// NoAudioEffects (server global frequencies) are mixed dry.
+    /// </summary>
+    public static bool IsEligible(TransmissionSegment segment)
+        => segment != null && IsEligible(segment.Decryptable, segment.NoAudioEffects);
+
+    public static bool IsEligible(bool decryptable, bool noAudioEffects)
+        => decryptable && !noAudioEffects;
+
+    /// <summary>
+    /// Process segments into <paramref name="audioOut"/>. Returns samples written.
+    /// Callers pass only <see cref="IsEligible(TransmissionSegment)"/> segments.
     /// </summary>
     public int ProcessSegments(Span<float> audioOut, IReadOnlyList<TransmissionSegment> segments)
     {
+        audioOut.Clear();
+        WasSquelchOpen = false;
         if (segments == null || segments.Count == 0)
-        {
-            audioOut.Clear();
             return 0;
-        }
 
-        EnsureSquelchDefault();
+        foreach (var list in _byKind)
+            list.Clear();
+        foreach (var segment in segments)
+            _byKind[(int)KindOf(segment)].Add(segment);
 
-        // Tune from the first usable segment frequency (Hz → kHz).
-        var tunedHz = segments[0].Frequency;
-        if (tunedHz > 1)
-        {
-            var freqKhz = (int)Math.Round(tunedHz / 1000.0);
-            if (freqKhz > 0)
-                _processor.SetFrequency(freqKhz);
-        }
-
-        var inputs = new RadioReceiverInput[segments.Count];
-        for (var i = 0; i < segments.Count; i++)
-        {
-            var seg = segments[i];
-            var samples = (float[])seg.Audio.Clone();
-            ApplyTransmitterAlc(samples, seg.OriginalClientGuid ?? seg.ClientGuid);
-            var snrDb = EstimateSnrDb(seg);
-            var carrierScale = ApplyEventFading(samples, snrDb);
-
-            inputs[i] = new RadioReceiverInput
-            {
-                Samples = samples,
-                // Deep fades scale carrier power so the gate can pop; flutter does not.
-                RelativePower = RadioReceiverProcessor.SnrDbToRelativePower(snrDb) * carrierScale,
-                CarrierOffsetHz = EstimateCarrierOffsetHz(seg, tunedHz),
-            };
-        }
-
+        EnsureScratch(audioOut.Length);
+        var scratch = _scratch.AsSpan(0, audioOut.Length);
         try
         {
-            _processor.Process(audioOut, inputs);
-            AudioManipulationHelper.ApplyLinearGain(audioOut, OutputTrim);
+            for (var kind = 0; kind < _byKind.Length; kind++)
+            {
+                if (_byKind[kind].Count == 0)
+                    continue;
+
+                scratch.Clear();
+                WasSquelchOpen |= ProcessKind((ReceiverKind)kind, scratch, _byKind[kind]);
+                for (var i = 0; i < audioOut.Length; i++)
+                    audioOut[i] += scratch[i];
+            }
+
+            _limiter.Process(audioOut, 1);
         }
         catch (Exception e)
         {
-            Logger.Error(e, "OpenFreq receiver DSP failed on radio {RadioId}", _radioId);
-            _processor.ResetAgc();
+            Logger.Error(e, "Receiver DSP failed on radio {RadioId}", _radioId);
+            _am.ResetAgc();
             audioOut.Clear();
             return 0;
         }
@@ -120,24 +173,35 @@ public sealed class OpenFreqReceiverEffectsPipeline
     }
 
     /// <summary>
-    /// Run the receiver with no transmitters so noise/AGC/squelch continue after key-up.
+    /// Run the analog receivers with no transmitters so noise, AGC and squelch continue after key-up:
+    /// AM closes fast, FM gives its squelch tail.
     /// </summary>
     public int ProcessDrain(Span<float> audioOut)
     {
         if (audioOut.IsEmpty)
             return 0;
 
-        EnsureSquelchDefault();
-
+        EnsureScratch(audioOut.Length);
+        var scratch = _scratch.AsSpan(0, audioOut.Length);
         try
         {
-            _processor.Process(audioOut, Array.Empty<RadioReceiverInput>());
-            AudioManipulationHelper.ApplyLinearGain(audioOut, OutputTrim);
+            _am.Process(audioOut, Array.Empty<RadioReceiverInput>());
+            _amCompressor.Process(audioOut);
+            AudioManipulationHelper.ApplyLinearGain(audioOut, AmOutputTrim);
+
+            _fm.Process(scratch, Array.Empty<RadioReceiverInput>());
+            _fmCompressor.Process(scratch);
+            AudioManipulationHelper.ApplyLinearGain(scratch, FmOutputTrim);
+            for (var i = 0; i < audioOut.Length; i++)
+                audioOut[i] += scratch[i];
+
+            _limiter.Process(audioOut, 1);
+            WasSquelchOpen = _am.WasSquelchOpen || _fm.WasSquelchOpen;
         }
         catch (Exception e)
         {
-            Logger.Error(e, "OpenFreq receiver drain failed on radio {RadioId}", _radioId);
-            _processor.ResetAgc();
+            Logger.Error(e, "Receiver drain failed on radio {RadioId}", _radioId);
+            _am.ResetAgc();
             audioOut.Clear();
             return 0;
         }
@@ -147,8 +211,8 @@ public sealed class OpenFreqReceiverEffectsPipeline
 
     public void Reset()
     {
-        _processor.ResetAgc();
-        _processor.SquelchLevel = 1.0f;
+        _am.ResetAgc();
+        _am.SquelchLevel = 1.0f;
         _dropoutSamplesLeft = 0;
         _dropoutFadeSamples = 0;
         _dropoutInitialSamples = 0;
@@ -156,75 +220,131 @@ public sealed class OpenFreqReceiverEffectsPipeline
         _deepFadeFadeSamples = 0;
         _deepFadeInitialSamples = 0;
         _ppmByGuid.Clear();
-        _alcByGuid.Clear();
+        _cvsdByGuid.Clear();
+        _amCompressor.Reset();
+        _fmCompressor.Reset();
+        _digitalCompressor.Reset();
     }
-
-    /// <summary>
-    /// True when every segment has OpenFreq-AM segment shape (clear AM, effects on).
-    /// Does not read the engine setting — callers also check <see cref="IsOpenFreqEnabled"/>.
-    /// Prefer partitioning with <see cref="IsEligibleOpenFreqAm(TransmissionSegment)"/> so mixed
-    /// batches do not force clear AM onto the SRS mixer.
-    /// </summary>
-    public static bool CanProcess(IReadOnlyList<TransmissionSegment> segments)
-    {
-        if (segments == null || segments.Count == 0)
-            return false;
-
-        foreach (var seg in segments)
-        {
-            if (!HasOpenFreqAmSegmentShape(seg.Modulation, seg.Decryptable, seg.NoAudioEffects))
-                return false;
-        }
-
-        return true;
-    }
-
-    /// <summary>True when the client profile selects the OpenFreq receive engine.</summary>
-    public static bool IsOpenFreqEnabled()
-    {
-        var raw = GlobalSettingsStore.Instance.ProfileSettingsStore
-            .GetClientSettingString(ProfileSettingsKeys.ReceiverEffectsEngine);
-        return Enum.TryParse(raw, true, out ReceiverEffectsEngine engine)
-               && engine == ReceiverEffectsEngine.OpenFreq;
-    }
-
-    /// <summary>Alias for <see cref="IsOpenFreqEnabled"/> (historical AM-focused name).</summary>
-    public static bool IsOpenFreqAmEnabled() => IsOpenFreqEnabled();
-
-    /// <summary>
-    /// Segment shape for OpenFreq AM DSP: clear AM, decryptable, effects allowed.
-    /// FM / MIDS / intercom / failed decrypt / NoAudioEffects never match.
-    /// </summary>
-    public static bool HasOpenFreqAmSegmentShape(Modulation modulation, bool decryptable, bool noAudioEffects)
-        => modulation == Modulation.AM
-           && decryptable
-           && !noAudioEffects;
-
-    /// <summary>
-    /// Fully eligible OpenFreq AM path: engine on and segment shape matches.
-    /// </summary>
-    public static bool IsEligibleOpenFreqAm(Modulation modulation, bool decryptable, bool noAudioEffects)
-        => IsOpenFreqEnabled()
-           && HasOpenFreqAmSegmentShape(modulation, decryptable, noAudioEffects);
-
-    public static bool IsEligibleOpenFreqAm(TransmissionSegment segment)
-        => segment != null
-           && IsEligibleOpenFreqAm(segment.Modulation, segment.Decryptable, segment.NoAudioEffects);
-
-    /// <summary>
-    /// Per-source gate used before SRS TX/loss processing. Requires full eligibility
-    /// (not modulation alone) so failed-decrypt / NoAudioEffects AM stay on the SRS path.
-    /// </summary>
-    public static bool ShouldOwnAmPath(Modulation modulation, bool decryptable = true, bool noAudioEffects = false)
-        => IsEligibleOpenFreqAm(modulation, decryptable, noAudioEffects);
 
     public static int DrainSampleCount(int sampleRate) =>
         Math.Max(1, sampleRate * DrainMilliseconds / 1000);
 
-    private void EnsureSquelchDefault()
+    private bool ProcessKind(ReceiverKind kind, Span<float> output, List<TransmissionSegment> segments)
     {
-        // Fixed OpenFreq default. Not mapped to DCS volume / cockpit knobs.
-        _processor.SquelchLevel = 1.0f;
+        switch (kind)
+        {
+            case ReceiverKind.Am:
+            {
+                TuneAm(segments[0].Frequency);
+                _am.Process(output, BuildRfInputs(segments, segments[0].Frequency));
+                _amCompressor.Process(output);
+                AudioManipulationHelper.ApplyLinearGain(output, AmOutputTrim);
+                return _am.WasSquelchOpen;
+            }
+            case ReceiverKind.Fm:
+            {
+                _fm.Process(output, BuildRfInputs(segments, segments[0].Frequency));
+                _fmCompressor.Process(output);
+                AudioManipulationHelper.ApplyLinearGain(output, FmOutputTrim);
+                return _fm.WasSquelchOpen;
+            }
+            case ReceiverKind.Digital:
+            {
+                foreach (var segment in segments)
+                {
+                    var voice = (float[])segment.Audio.Clone();
+                    var codec = GetCodec(segment.OriginalClientGuid ?? segment.ClientGuid);
+                    codec.BitErrorRate = EstimateBitErrorRate(segment);
+                    codec.Process(voice);
+                    Mix(output, voice);
+                }
+
+                for (var i = 0; i < output.Length; i++)
+                    output[i] = _digitalBand.Process(output[i]);
+                _digitalCompressor.Process(output);
+                AudioManipulationHelper.ApplyLinearGain(output, DigitalOutputTrim);
+                return true;
+            }
+            default:
+            {
+                foreach (var segment in segments)
+                    Mix(output, segment.Audio);
+                // No RF stage, so no receive compressor; the output limiter still applies.
+                for (var i = 0; i < output.Length; i++)
+                    output[i] = _intercomBand.Process(output[i]);
+                AudioManipulationHelper.ApplyLinearGain(output, IntercomOutputTrim);
+                return true;
+            }
+        }
+    }
+
+    private RadioReceiverInput[] BuildRfInputs(List<TransmissionSegment> segments, double tunedHz)
+    {
+        var inputs = new RadioReceiverInput[segments.Count];
+        for (var i = 0; i < segments.Count; i++)
+        {
+            var seg = segments[i];
+            var samples = (float[])seg.Audio.Clone();
+            var snrDb = EstimateSnrDb(seg);
+            var carrierScale = ApplyEventFading(samples, snrDb);
+            inputs[i] = new RadioReceiverInput
+            {
+                Samples = samples,
+                // Deep fades scale carrier power so the gate can pop; flutter does not.
+                RelativePower = RadioReceiverProcessor.SnrDbToRelativePower(snrDb) * carrierScale,
+                CarrierOffsetHz = EstimateCarrierOffsetHz(seg, tunedHz),
+                Key = seg.OriginalClientGuid ?? seg.ClientGuid,
+            };
+        }
+
+        return inputs;
+    }
+
+    private void TuneAm(double tunedHz)
+    {
+        // Hz -> kHz; the AM noise character follows the band.
+        if (tunedHz <= 1)
+            return;
+        var freqKhz = (int)Math.Round(tunedHz / 1000.0);
+        if (freqKhz > 0)
+            _am.SetFrequency(freqKhz);
+    }
+
+    private CvsdVoiceCodec GetCodec(string guid)
+    {
+        guid ??= "unknown";
+        if (!_cvsdByGuid.TryGetValue(guid, out var codec))
+        {
+            codec = new CvsdVoiceCodec(_sampleRate);
+            _cvsdByGuid[guid] = codec;
+        }
+
+        return codec;
+    }
+
+    /// <summary>
+    /// Bit errors for digital voice over a radio link: non-coherent FSK, Eb/N0 ~3 dB under the RF SNR.
+    /// Clean at short range, garbled near the edge. MIDS and SATCOM run their own error-corrected links.
+    /// </summary>
+    internal static double EstimateBitErrorRate(TransmissionSegment seg)
+    {
+        if (seg.Modulation is Modulation.MIDS or Modulation.SATCOM)
+            return 0;
+        var ebN0 = Math.Pow(10, (EstimateSnrDb(seg) - 3) / 10);
+        return 0.5 * Math.Exp(-ebN0 / 2);
+    }
+
+    private void EnsureScratch(int length)
+    {
+        if (_scratch.Length < length)
+            _scratch = new float[length];
+    }
+
+    private static void Mix(Span<float> target, ReadOnlySpan<float> source)
+    {
+        var n = Math.Min(target.Length, source.Length);
+        for (var i = 0; i < n; i++)
+            target[i] += source[i];
     }
 
     /// <summary>
@@ -254,35 +374,6 @@ public sealed class OpenFreqReceiverEffectsPipeline
         var crystalOffset = (float)(freqHz * (ppm * 1e-6));
         var dialOffset = (float)(freqHz - tunedHz);
         return crystalOffset + dialOffset;
-    }
-
-    internal void ApplyTransmitterAlc(Span<float> samples, string guid)
-    {
-        guid ??= "unknown";
-        if (!_alcByGuid.TryGetValue(guid, out var envelope))
-        {
-            // Fast attack catches the first syllable; slow release holds gain through words.
-            envelope = AttackDecayFilter.MakeAttackDecayFilter(0.02, 1.0, _sampleRate);
-            envelope.D1 = AlcTarget / AlcMaxGain; // start at full gain so quiet senders are heard at once
-            _alcByGuid[guid] = envelope;
-        }
-
-        for (var i = 0; i < samples.Length; i++)
-        {
-            var level = envelope.Apply(MathF.Abs(samples[i]));
-            var gain = Math.Min(AlcMaxGain, AlcTarget / Math.Max(level, 1e-6f));
-            samples[i] = SoftClip(samples[i] * gain);
-        }
-    }
-
-    /// <summary>Linear below the knee, tanh above it; never exceeds ±1 (100% modulation).</summary>
-    internal static float SoftClip(float x)
-    {
-        var a = MathF.Abs(x);
-        if (a <= ClipperKnee)
-            return x;
-        var range = 1f - ClipperKnee;
-        return MathF.CopySign(ClipperKnee + range * MathF.Tanh((a - ClipperKnee) / range), x);
     }
 
     private float GetStablePpm(string guid)

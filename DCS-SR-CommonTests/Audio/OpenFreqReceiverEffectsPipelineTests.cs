@@ -34,46 +34,6 @@ public class OpenFreqReceiverEffectsPipelineTests
     }
 
     [TestMethod]
-    public void CanProcess_AcceptsNormalAm()
-    {
-        var seg = MakeSegment(new float[480]);
-        Assert.IsTrue(OpenFreqReceiverEffectsPipeline.CanProcess(new[] { seg }));
-    }
-
-    [TestMethod]
-    public void CanProcess_RejectsIntercomAndFmAndEncrypted()
-    {
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
-        {
-            MakeSegment(new float[100], Modulation.INTERCOM)
-        }));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
-        {
-            MakeSegment(new float[100], Modulation.FM)
-        }));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
-        {
-            MakeSegment(new float[100], Modulation.SINCGARS)
-        }));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
-        {
-            MakeSegment(new float[100], Modulation.HAVEQUICK)
-        }));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
-        {
-            MakeSegment(new float[100], Modulation.MIDS)
-        }));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
-        {
-            MakeSegment(new float[100], decryptable: false)
-        }));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[]
-        {
-            MakeSegment(new float[100], noEffects: true)
-        }));
-    }
-
-    [TestMethod]
     public void ProcessSegments_ProducesFiniteAmAudioAndKeepsPerRadioState()
     {
         var pipeline = new OpenFreqReceiverEffectsPipeline(radioId: 1, sampleRate: Constants.OUTPUT_SAMPLE_RATE);

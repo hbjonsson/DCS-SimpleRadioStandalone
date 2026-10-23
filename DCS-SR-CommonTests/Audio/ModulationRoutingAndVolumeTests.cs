@@ -39,59 +39,6 @@ public class ModulationRoutingAndVolumeTests
     }
 
     [TestMethod]
-    public void RoutingMatrix_SegmentShape_OnlyClearAmMatches()
-    {
-        Assert.IsTrue(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            Modulation.AM, decryptable: true, noAudioEffects: false));
-
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            Modulation.AM, decryptable: false, noAudioEffects: false));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            Modulation.AM, decryptable: true, noAudioEffects: true));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            Modulation.FM, decryptable: true, noAudioEffects: false));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            Modulation.SINCGARS, decryptable: true, noAudioEffects: false));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            Modulation.HAVEQUICK, decryptable: true, noAudioEffects: false));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            Modulation.MIDS, decryptable: true, noAudioEffects: false));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            Modulation.SATCOM, decryptable: true, noAudioEffects: false));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            Modulation.INTERCOM, decryptable: true, noAudioEffects: false));
-    }
-
-    [TestMethod]
-    public void CanProcess_RejectsMixedAmAndFmBatch()
-    {
-        var am = MakeSegment(new float[32], Modulation.AM);
-        var fm = MakeSegment(new float[32], Modulation.FM);
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.CanProcess(new[] { am, fm }));
-    }
-
-    [TestMethod]
-    public void CanProcess_AcceptsDecryptableEncryptedAm()
-    {
-        // Successful KY-58 decrypt is still clear AM for OpenFreq DSP.
-        var seg = new TransmissionSegment(new DeJitteredTransmission
-        {
-            PCMMonoAudio = new float[16],
-            PCMAudioLength = 16,
-            Modulation = Modulation.AM,
-            Decryptable = true,
-            Encryption = 3,
-            Frequency = 251_000_000,
-            Volume = 1f,
-            Guid = "AAAAAAAAAAAAAAAAAAAAAA",
-            OriginalClientGuid = "AAAAAAAAAAAAAAAAAAAAAA",
-        });
-        Assert.IsTrue(OpenFreqReceiverEffectsPipeline.CanProcess(new[] { seg }));
-        Assert.IsTrue(seg.HasEncryption);
-        Assert.IsTrue(seg.Decryptable);
-    }
-
-    [TestMethod]
     public void ConvertRadioVolumeSlider_KnownPoints()
     {
         Assert.AreEqual(1f, VolumeConversionHelper.ConvertRadioVolumeSlider(1f), 1e-5f);
@@ -121,30 +68,6 @@ public class ModulationRoutingAndVolumeTests
     }
 
     [TestMethod]
-    public void FmCapture_SelectsLowestCombinedLoss()
-    {
-        Assert.IsTrue(ClientEffectsPipeline.IsFmCaptureModulation(Modulation.FM));
-        Assert.IsTrue(ClientEffectsPipeline.IsFmCaptureModulation(Modulation.SINCGARS));
-        Assert.IsFalse(ClientEffectsPipeline.IsFmCaptureModulation(Modulation.HAVEQUICK));
-        Assert.IsFalse(ClientEffectsPipeline.IsFmCaptureModulation(Modulation.AM));
-
-        var strong = MakeSegment(new float[8], Modulation.FM, receivingPower: 0.05, lineOfSightLoss: 0f, guid: "STRONG");
-        var weak = MakeSegment(new float[8], Modulation.FM, receivingPower: 0.9, lineOfSightLoss: 0.5f, guid: "WEAK");
-
-        var strongLoss = ClientEffectsPipeline.CombinedReceiveLoss(strong);
-        var weakLoss = ClientEffectsPipeline.CombinedReceiveLoss(weak);
-        Assert.IsTrue(strongLoss < weakLoss, $"expected strong {strongLoss} < weak {weakLoss}");
-    }
-
-    [TestMethod]
-    public void FmCapture_SincgarsUsesSameLossMetric()
-    {
-        var a = MakeSegment(new float[4], Modulation.SINCGARS, receivingPower: 0.2, lineOfSightLoss: 0.1f);
-        var b = MakeSegment(new float[4], Modulation.SINCGARS, receivingPower: 0.8, lineOfSightLoss: 0.1f);
-        Assert.IsTrue(ClientEffectsPipeline.CombinedReceiveLoss(a) < ClientEffectsPipeline.CombinedReceiveLoss(b));
-    }
-
-    [TestMethod]
     public void ApplyLinearGain_AfterClip_IsPureLoudness()
     {
         var clipped = new float[] { 1f, -1f, 0.5f };
@@ -159,20 +82,39 @@ public class ModulationRoutingAndVolumeTests
     }
 
     [TestMethod]
+    public void RoutingMatrix_EveryModulationHasAReceiver()
+    {
+        Assert.AreEqual(OpenFreqReceiverEffectsPipeline.ReceiverKind.Am,
+            OpenFreqReceiverEffectsPipeline.KindOf(Modulation.AM, encrypted: false));
+        Assert.AreEqual(OpenFreqReceiverEffectsPipeline.ReceiverKind.Am,
+            OpenFreqReceiverEffectsPipeline.KindOf(Modulation.HAVEQUICK, encrypted: false));
+        Assert.AreEqual(OpenFreqReceiverEffectsPipeline.ReceiverKind.Fm,
+            OpenFreqReceiverEffectsPipeline.KindOf(Modulation.FM, encrypted: false));
+        Assert.AreEqual(OpenFreqReceiverEffectsPipeline.ReceiverKind.Fm,
+            OpenFreqReceiverEffectsPipeline.KindOf(Modulation.SINCGARS, encrypted: false));
+        Assert.AreEqual(OpenFreqReceiverEffectsPipeline.ReceiverKind.Digital,
+            OpenFreqReceiverEffectsPipeline.KindOf(Modulation.MIDS, encrypted: false));
+        Assert.AreEqual(OpenFreqReceiverEffectsPipeline.ReceiverKind.Digital,
+            OpenFreqReceiverEffectsPipeline.KindOf(Modulation.SATCOM, encrypted: false));
+        Assert.AreEqual(OpenFreqReceiverEffectsPipeline.ReceiverKind.Intercom,
+            OpenFreqReceiverEffectsPipeline.KindOf(Modulation.INTERCOM, encrypted: false));
+
+        // KY-58 / VINSON is digital voice whatever the radio's modulation.
+        Assert.AreEqual(OpenFreqReceiverEffectsPipeline.ReceiverKind.Digital,
+            OpenFreqReceiverEffectsPipeline.KindOf(Modulation.AM, encrypted: true));
+        Assert.AreEqual(OpenFreqReceiverEffectsPipeline.ReceiverKind.Digital,
+            OpenFreqReceiverEffectsPipeline.KindOf(Modulation.FM, encrypted: true));
+    }
+
+    [TestMethod]
     public void PartitionEligibility_FailedDecryptAndNoEffectsStayOnFallback()
     {
-        var clearAm = MakeSegment(new float[8], Modulation.AM);
-        var failed = MakeSegment(new float[8], Modulation.AM, decryptable: false);
-        var noFx = MakeSegment(new float[8], Modulation.AM, noEffects: true);
-        var fm = MakeSegment(new float[8], Modulation.FM);
-
-        Assert.IsTrue(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            clearAm.Modulation, clearAm.Decryptable, clearAm.NoAudioEffects));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            failed.Modulation, failed.Decryptable, failed.NoAudioEffects));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            noFx.Modulation, noFx.Decryptable, noFx.NoAudioEffects));
-        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.HasOpenFreqAmSegmentShape(
-            fm.Modulation, fm.Decryptable, fm.NoAudioEffects));
+        Assert.IsTrue(OpenFreqReceiverEffectsPipeline.IsEligible(MakeSegment(new float[8], Modulation.AM)));
+        Assert.IsTrue(OpenFreqReceiverEffectsPipeline.IsEligible(MakeSegment(new float[8], Modulation.FM)));
+        Assert.IsTrue(OpenFreqReceiverEffectsPipeline.IsEligible(MakeSegment(new float[8], Modulation.INTERCOM)));
+        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.IsEligible(
+            MakeSegment(new float[8], Modulation.AM, decryptable: false)));
+        Assert.IsFalse(OpenFreqReceiverEffectsPipeline.IsEligible(
+            MakeSegment(new float[8], Modulation.AM, noEffects: true)));
     }
 }

@@ -2238,33 +2238,6 @@ namespace Ciribob.DCS.SimpleRadio.Standalone.Client.Properties {
                 return ResourceManager.GetString("PerRadioModelEffects", resourceCulture);
             }
         }
-
-        /// <summary>
-        ///   Looks up a localized string similar to Use OpenFreq Receive Effects (AM, local only).
-        /// </summary>
-        public static string OpenFreqReceiveEffects {
-            get {
-                return ResourceManager.GetString("OpenFreqReceiveEffects", resourceCulture);
-            }
-        }
-
-        /// <summary>
-        ///   Looks up a localized string similar to OpenFreq replaces AM receive character only...
-        /// </summary>
-        public static string OpenFreqReceiveEffectsHelp {
-            get {
-                return ResourceManager.GetString("OpenFreqReceiveEffectsHelp", resourceCulture);
-            }
-        }
-
-        /// <summary>
-        ///   Looks up a localized string similar to Applies to SRS receive paths...
-        /// </summary>
-        public static string OpenFreqBypassedAmTooltip {
-            get {
-                return ResourceManager.GetString("OpenFreqBypassedAmTooltip", resourceCulture);
-            }
-        }
         
         /// <summary>
         ///   Looks up a localized string similar to Play connection sounds.

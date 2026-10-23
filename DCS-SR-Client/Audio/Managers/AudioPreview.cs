@@ -46,8 +46,8 @@ internal class AudioPreview
     private SRSWasapiOut _waveOut;
 
     private bool windowsN;
-    private bool _useOpenFreqPath;
     private OpenFreqReceiverEffectsPipeline _openFreqPipeline;
+    private TransmitterProcessor _transmitter;
     private ProceduralAmbientProcessor _proceduralAmbient;
     private ProceduralAmbientProcessor.Profile? _proceduralProfile;
     private CachedAudioEffect _wavAmbient;
@@ -88,10 +88,8 @@ internal class AudioPreview
     {
         this.windowsN = windowsN;
         PreviewAircraft = _profileSettings.GetClientSettingString(ProfileSettingsKeys.PreviewAircraft);
-        _useOpenFreqPath = OpenFreqReceiverEffectsPipeline.IsOpenFreqAmEnabled();
-        _openFreqPipeline = _useOpenFreqPath
-            ? new OpenFreqReceiverEffectsPipeline(radioId: 0, sampleRate: Constants.OUTPUT_SAMPLE_RATE)
-            : null;
+        _openFreqPipeline = new OpenFreqReceiverEffectsPipeline(radioId: 0, sampleRate: Constants.OUTPUT_SAMPLE_RATE);
+        _transmitter = new TransmitterProcessor(Constants.OUTPUT_SAMPLE_RATE);
 
         try
         {
@@ -109,8 +107,6 @@ internal class AudioPreview
             _buffBufferedWaveProvider.DiscardOnBufferOverflow = true;
 
             ISampleProvider sampleProvider = _buffBufferedWaveProvider.ToSampleProvider();
-            if (!_useOpenFreqPath)
-                sampleProvider = new RadioFilter(sampleProvider);
 
             //add final volume boost to all mixed audio
             _volumeSampleProvider = new VolumeSampleProviderWithPeak(sampleProvider,
@@ -286,10 +282,12 @@ internal class AudioPreview
                     var decodedLength = 0;
                     var decodedBytes = _decoder.Decode(encoded, len, out decodedLength);
 
-                    if (_useOpenFreqPath && _openFreqPipeline != null)
+                    if (_openFreqPipeline != null)
                     {
                         var floats = Pcm16ToFloat(decodedBytes, decodedLength);
+                        _transmitter.ApplyLevelControl(floats);
                         ApplyPreviewAmbient(floats);
+                        TransmitterProcessor.ApplySpeechClipper(floats, Modulation.AM, encrypted: false);
                         var processed = new float[floats.Length];
                         var segment = new TransmissionSegment(
                             floats,

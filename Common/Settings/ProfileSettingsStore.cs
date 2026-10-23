@@ -75,12 +75,6 @@ public enum ProfileSettingsKeys
     InstructorMode, // allows tuning to Intercoms, only for receiving - cant send
 
     /// <summary>
-    /// Local receive effects engine: "OpenFreq" (default; AM only) or "SRS".
-    /// Affects playback only — wire protocol unchanged.
-    /// </summary>
-    ReceiverEffectsEngine,
-
-    /// <summary>
     /// Aircraft ambient identifier used by audio preview (e.g. f16, a10, uh60).
     /// </summary>
     PreviewAircraft
@@ -93,12 +87,6 @@ public enum ServerPresetConfiguration
     USE_CLIENT_AND_SERVER_IF_SET
 }
 
-/// <summary>Client-local AM receive effects engine selection.</summary>
-public enum ReceiverEffectsEngine
-{
-    SRS,
-    OpenFreq
-}
 
 public class ProfileSettingsStore
 {
@@ -181,7 +169,6 @@ public class ProfileSettingsStore
         { ProfileSettingsKeys.Radio9Channel.ToString(), "0" },
         { ProfileSettingsKeys.Radio10Channel.ToString(), "0" },
         { ProfileSettingsKeys.IntercomChannel.ToString(), "0" },
-        { ProfileSettingsKeys.ReceiverEffectsEngine.ToString(), nameof(ReceiverEffectsEngine.OpenFreq) },
         { ProfileSettingsKeys.PreviewAircraft.ToString(), "f16" },
     };
 

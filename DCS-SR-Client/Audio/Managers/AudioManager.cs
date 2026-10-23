@@ -76,6 +76,8 @@ public class AudioManager : IHandle<SRClientUpdateMessage>
     private BufferedWaveProvider _micWaveOutBuffer;
 
     private ClientAudioProvider _passThroughAudioProvider;
+    // Receive side for the passthrough output, so a stream hears our own voice as others do.
+    private OpenFreqReceiverEffectsPipeline[] _passThroughReceivers;
 
     private List<RadioMixingProvider> _radioMixingProvider;
     private EventDrivenResampler _resampler;
@@ -150,6 +152,18 @@ public class AudioManager : IHandle<SRClientUpdateMessage>
         _waveOut.Play();
     }
 
+    private float[] ApplyPassThroughReceiver(TransmissionSegment segment, int radio)
+    {
+        if (!OpenFreqReceiverEffectsPipeline.IsEligible(segment))
+            return segment.Audio;
+
+        _passThroughReceivers[radio] ??= new OpenFreqReceiverEffectsPipeline(radio, Constants.OUTPUT_SAMPLE_RATE);
+        var processed = new float[segment.Audio.Length];
+        _passThroughReceivers[radio].ProcessSegments(processed, new[] { segment });
+        AudioManipulationHelper.ClipArray(processed);
+        return processed;
+    }
+
     private void InitMicPassthrough()
     {
         MMDevice micOutput = null;
@@ -201,6 +215,7 @@ public class AudioManager : IHandle<SRClientUpdateMessage>
     public void InitMicInput()
     {
         _passThroughAudioProvider = new ClientAudioProvider();
+        _passThroughReceivers = new OpenFreqReceiverEffectsPipeline[Constants.MAX_RADIOS];
         
         var device = (MMDevice)_audioInputSingleton.SelectedAudioInput.Value;
 
@@ -379,8 +394,7 @@ public class AudioManager : IHandle<SRClientUpdateMessage>
 
                             if (segment != null)
                             {
-                                var audioSpan = segment.Audio.AsSpan();
-                                // passthrough, run without transforms.
+                                var audioSpan = ApplyPassThroughReceiver(segment, clientAudio.ReceivedRadio).AsSpan();
                                 if (_micWaveOutBuffer != null && _micWaveOut != null)
                                 {
                                     //now its a processed Mono audio
@@ -398,7 +412,7 @@ public class AudioManager : IHandle<SRClientUpdateMessage>
                                 //TODO fix this as we're only recording our own audio if passthrough is enabled?
                                 if (recordAudio)
                                 {
-                                    _audioRecordingManager.AppendPlayerAudio(segment.Audio, audioSpan.Length, clientAudio.ReceivedRadio);
+                                    _audioRecordingManager.AppendPlayerAudio(audioSpan.ToArray(), audioSpan.Length, clientAudio.ReceivedRadio);
                                 }
                             }
                         }

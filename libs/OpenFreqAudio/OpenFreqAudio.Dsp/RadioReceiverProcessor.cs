@@ -1,3 +1,4 @@
+using System;
 using NWaves.Filters.Base;
 using NWaves.Filters.Butterworth;
 using NWaves.Filters.Fda;
@@ -38,6 +39,8 @@ public sealed class RadioReceiverProcessor
     private BackgroundNoiseGenerator _noise;
     private int _frequencyKhz;
     private long _sampleNum;
+    private readonly SquelchGate _gate;
+    private float[] _gateTarget = Array.Empty<float>();
 
     /// <summary>
     /// Squelch threshold scale. Typical OpenFreq default is 1.0 → gate opens at AGC level ≥ 2.0 (+6 dB).
@@ -65,6 +68,7 @@ public sealed class RadioReceiverProcessor
         _highPass = new FilterChain(DesignFilter.TfToSos(new HighPassFilter(290.0 / sampleRate, 7).Tf));
         _lowPass = new LowPassFilter(3000.0 / sampleRate, 6);
         _noise = new BackgroundNoiseGenerator(sampleRate, _frequencyKhz);
+        _gate = new SquelchGate(sampleRate);
     }
 
     /// <summary>Convert SNR in dB to linear relative power for <see cref="RadioReceiverInput"/>.</summary>
@@ -78,6 +82,10 @@ public sealed class RadioReceiverProcessor
         _frequencyKhz = frequencyKhz;
         _noise = new BackgroundNoiseGenerator(_sampleRate, _frequencyKhz);
     }
+
+    // AGC-normalised envelope around its carrier level, saturating like a real detector: while the AGC
+    // catches up with a new carrier the raw ratio overshoots by up to the carrier's SNR.
+    private float Detect(float env) => Math.Clamp(env / _agc.D1 - 1f, -1f, 1f);
 
     /// <summary>Reset AGC to unity (e.g. when switching effect engines).</summary>
     public void ResetAgc() => _agc.D1 = 1f;
@@ -93,6 +101,8 @@ public sealed class RadioReceiverProcessor
         float squelchThreshold = SquelchLevel * 2.0f;
         bool squelchOpened = false;
         int numStreams = transmitters.Length;
+        if (_gateTarget.Length < samples)
+            _gateTarget = new float[samples];
 
         if (numStreams > 0)
         {
@@ -116,15 +126,11 @@ public sealed class RadioReceiverProcessor
                 float env = (float)Math.Sqrt(i * i + q * q);
                 _agc.Apply(env);
 
-                if (_agc.D1 >= squelchThreshold)
-                {
-                    output[n] = env / _agc.D1;
-                    squelchOpened = true;
-                }
-                else
-                {
-                    output[n] = 0f;
-                }
+                // Detect continuously and gate after the filters, as a real receiver mutes its audio
+                // stage: gating the raw detector would step its carrier DC into the filters (a loud crack).
+                output[n] = Detect(env);
+                _gateTarget[n] = _agc.D1 >= squelchThreshold ? 1f : 0f;
+                squelchOpened |= _agc.D1 >= squelchThreshold;
             }
         }
         else
@@ -136,21 +142,15 @@ public sealed class RadioReceiverProcessor
                 float env = (float)Math.Sqrt(i * i + q * q);
                 _agc.Apply(env);
 
-                if (_agc.D1 >= squelchThreshold)
-                {
-                    output[n] = env / _agc.D1;
-                    squelchOpened = true;
-                }
-                else
-                {
-                    output[n] = 0f;
-                }
+                output[n] = Detect(env);
+                _gateTarget[n] = _agc.D1 >= squelchThreshold ? 1f : 0f;
+                squelchOpened |= _agc.D1 >= squelchThreshold;
             }
         }
 
         for (int n = 0; n < samples; ++n)
         {
-            output[n] = _lowPass.Process(_highPass.Process(output[n]));
+            output[n] = _gate.Apply(_lowPass.Process(_highPass.Process(output[n])), _gateTarget[n]);
         }
 
         WasSquelchOpen = squelchOpened;

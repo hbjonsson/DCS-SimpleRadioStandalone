@@ -56,7 +56,9 @@ public sealed class ProceduralAmbientProcessor
     private uint _noiseState2 = 0xDEADBEEFu;
     private uint _noiseState3 = 0xCAFEBABEu;
 
-    public ProceduralAmbientProcessor(int sampleRate, Profile profile, float strength = 5f)
+    // Callers add the cockpit after the transmitter's level control, so the voice is near full scale;
+    // 2.5 puts the cockpit noise roughly 18 dB under it.
+    public ProceduralAmbientProcessor(int sampleRate, Profile profile, float strength = 2.5f)
     {
         if (sampleRate <= 0)
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
